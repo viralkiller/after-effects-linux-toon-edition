@@ -44,14 +44,12 @@ pub enum MaskMethod {
 }
 
 impl MaskMethod {
-    pub const ALL: [MaskMethod; 7] = [
+    pub const ALL: [MaskMethod; 5] = [
         MaskMethod::Position,
         MaskMethod::PositionScale,
         MaskMethod::PositionScaleRotation,
         MaskMethod::PositionScaleRotationSkew,
         MaskMethod::Perspective,
-        MaskMethod::FaceOutline,
-        MaskMethod::FaceDetailed,
     ];
     pub fn label(self) -> &'static str {
         match self {
@@ -392,6 +390,12 @@ impl Session {
     }
 
     pub(crate) fn start_mask_track(&mut self, work: MaskWork, mask: Uid, direction: Direction, wait: bool) -> Result<(), String> {
+        if crate::feature_policy::removed_command("track.mask") {
+            return Err("Tracking has been removed from this fork".into());
+        }
+        if work.method.is_face() {
+            return Err("Face tracking has been removed from this fork".into());
+        }
         if self.is_mask_tracking() || self.is_tracking() {
             return Err("a track analysis is already running".into());
         }

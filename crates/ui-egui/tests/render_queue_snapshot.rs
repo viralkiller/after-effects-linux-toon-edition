@@ -12,7 +12,7 @@ use serde_json::json;
 #[ignore]
 fn render_queue_panel_snapshot() {
     let mut s = Session::default();
-    s.execute("file.openDemoProject", json!({})).unwrap();
+    effectcraft_engine::commands::open_demo_fixture(&mut s).unwrap();
     s.execute("renderQueue.add", json!({"output": "/renders/[compName].[fileExtension]", "resolution": "half", "timeSpan": "comp"})).unwrap();
     s.execute("renderQueue.add", json!({"format": "prores", "channels": "rgba", "output": "/renders/[compName]_alpha.mov"})).unwrap();
     s.execute("renderQueue.add", json!({"format": "png", "output": "/renders/frames/[compName]_[#####].png", "timeSpan": "workArea"})).unwrap();
@@ -47,7 +47,7 @@ fn render_queue_panel_snapshot() {
 #[ignore]
 fn templates_dialog_snapshot() {
     let mut s = Session::default();
-    s.execute("file.openDemoProject", json!({})).unwrap();
+    effectcraft_engine::commands::open_demo_fixture(&mut s).unwrap();
     s.execute("renderQueue.add", json!({"output": "/renders/[compName].[fileExtension]"})).unwrap();
     s.execute("renderQueue.saveTemplate", json!({"kind": "outputModule", "name": "Web Delivery", "item": s.project.render_queue[0].id, "params": {"format": "webm", "resize": {"preset": "HDTV 720"}}}))
         .unwrap();

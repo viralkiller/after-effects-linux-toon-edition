@@ -94,7 +94,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Workspace",
             [],
             None,
-            "{name: Default|Standard|Small Screen|Animation|Effects|Motion Tracking|Paint|Text|Minimal|All Panels}",
+            "{name: Default|Standard|Small Screen|Animation|Effects|Paint|Text|Minimal|All Panels}",
             always
         ),
         fe!("window.saveWorkspace", "Save Changes to this Workspace", ["Window", "Workspace"], None, "{}", always),

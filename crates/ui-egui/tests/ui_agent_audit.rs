@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 
 fn session() -> Session {
     let mut s = Session::default();
-    s.execute("file.openDemoProject", json!({})).unwrap();
+    effectcraft_engine::commands::open_demo_fixture(&mut s).unwrap();
     s
 }
 

@@ -303,6 +303,9 @@ impl Session {
     /// they are still valid). `wait`: block until done (wasm32 always does). Returns the number
     /// of frames.
     pub fn start_camera(&mut self, comp: ItemId, layer: LayerId, effect: Uid, wait: bool) -> Result<usize, String> {
+        if crate::feature_policy::removed_command("track.camera") {
+            return Err("This analysis feature has been removed from this fork".into());
+        }
         if self.is_camera_analyzing() {
             return Err("a 3D Camera Tracker analysis is already running".into());
         }

@@ -58,7 +58,16 @@ impl FrameImage {
         }
     }
     fn bytes(&self) -> usize {
-        self.size()[0] * self.size()[1] * 4
+        let [mut w, mut h] = self.size();
+        let mut bytes = w.saturating_mul(h).saturating_mul(4);
+        if self.is_gpu() {
+            while w > 1 || h > 1 {
+                w = (w / 2).max(1);
+                h = (h / 2).max(1);
+                bytes = bytes.saturating_add(w.saturating_mul(h).saturating_mul(4));
+            }
+        }
+        bytes
     }
     fn is_gpu(&self) -> bool {
         matches!(self, FrameImage::Gpu(_))
@@ -149,7 +158,7 @@ impl Cache {
     }
     /// The GPU ran out of memory: keep half as many GPU frames from now on.
     fn gpu_out_of_memory(&mut self) {
-        self.gpu_budget = (self.gpu_budget / 2).max(MIN_GPU_BUDGET);
+        self.gpu_budget = (self.gpu_budget / 2).max(MIN_GPU_BUDGET.min(self.budget)).min(self.gpu_budget);
         self.evict_gpu();
     }
     fn forget(&mut self, img: &FrameImage) {
@@ -684,8 +693,14 @@ impl Frames {
     /// Change the RAM preview cache budget (Settings ▸ Memory & CPU), evicting the oldest
     /// frames when it shrinks.
     pub fn set_budget(&self, bytes: usize) {
+        if let Ok(mut q) = self.queue.lock() {
+            // Rayon can still parallelize each frame across the whole pool. Bound the number
+            // of simultaneously live frame graphs rather than disabling pixel parallelism.
+            q.max_running = (bytes / (128 << 20)).clamp(1, 4);
+        }
         if let Ok(mut c) = self.cache.lock() {
             c.budget = bytes;
+            c.gpu_budget = c.gpu_budget.min(bytes);
             c.evict_to_budget();
         }
     }
@@ -963,6 +978,9 @@ impl Worker {
         let Worker { queue, content_keys, .. } = self;
         let job = {
             let Ok(mut q) = queue.lock() else { return false };
+            if q.running.len() >= q.max_running.max(1) {
+                return false;
+            }
             let Some(i) = Queue::best(&q.jobs) else { return false };
             let job = q.jobs.swap_remove(i);
             q.running.insert(job.key);
@@ -1153,6 +1171,7 @@ struct Job {
 
 #[derive(Default)]
 struct Queue {
+    max_running: usize,
     jobs: Vec<Job>,
     running: HashSet<FrameKey>,
     urgent_running: usize,
@@ -1390,6 +1409,20 @@ mod tests {
             c.gpu_out_of_memory();
         }
         assert_eq!(c.gpu_budget, MIN_GPU_BUDGET);
+    }
+
+    #[test]
+    fn optimization_memory_limit_caps_jobs_and_oom_never_raises_budget() {
+        let f = Frames::default();
+        f.set_budget(16 << 20);
+        assert_eq!(f.queue.lock().unwrap().max_running, 1);
+        {
+            let mut c = f.cache.lock().unwrap();
+            c.gpu_out_of_memory();
+            assert!(c.gpu_budget <= 16 << 20);
+        }
+        f.set_budget(512 << 20);
+        assert_eq!(f.queue.lock().unwrap().max_running, 4);
     }
 
     #[test]

@@ -358,6 +358,9 @@ impl Session {
     /// Start analysing. `wait`: block until done (wasm32 always does). One undo step covers the
     /// whole analysis.
     pub(crate) fn start_track(&mut self, work: Work, tracker: Uid, direction: Direction, wait: bool) -> Result<(), String> {
+        if crate::feature_policy::removed_command("track.motion") {
+            return Err("Tracking has been removed from this fork".into());
+        }
         if self.is_tracking() {
             return Err("a track analysis is already running".into());
         }

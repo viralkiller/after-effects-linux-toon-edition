@@ -82,6 +82,7 @@ impl crate::Session {
     /// What the Media Browser browses: [`crate::Session::browser`], else the local file system
     /// where this build has one.
     pub fn media_browser(&self) -> Option<std::sync::Arc<dyn Browser>> {
+        if crate::feature_policy::removed_command("mediaBrowser.list") { return None; }
         self.browser.clone().or_else(|| available().then(|| std::sync::Arc::new(FsBrowser) as std::sync::Arc<dyn Browser>))
     }
 }

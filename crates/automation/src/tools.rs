@@ -411,12 +411,10 @@ fn render_frame(b: &mut Backend, a: &Value) -> Result<Reply> {
 fn open_project(b: &mut Backend, a: &Value) -> Result<Reply> {
     if let Some(p) = get(a, "path") {
         b.exec("file.open", json!({"path": p}))?;
-    } else if get(a, "demo").and_then(Value::as_bool) == Some(true) {
-        b.exec("file.openDemoProject", json!({}))?;
     } else if get(a, "new").and_then(Value::as_bool) == Some(true) {
         b.exec("file.newProject", json!({}))?;
     } else {
-        return Err(Error::BadArgs("give `path` (.ecproj), `demo: true` or `new: true`".into()));
+        return Err(Error::BadArgs("give `path` (.ecproj) or `new: true`".into()));
     }
     get_project(b, &json!({}))
 }
@@ -744,10 +742,10 @@ static TOOLS: &[ToolDef] = &[
     },
     ToolDef {
         name: "open_project",
-        description: "Open a project: `path` to an .ecproj file, `demo: true` for the built-in demo project, or `new: true` for an empty project. Returns the project overview.",
+        description: "Open a project: `path` to an .ecproj file or `new: true` for an empty project. Returns the project overview.",
         bridge_only: false,
         schema: || {
-            schema(json!({"path": {"type": "string", "description": "Path of an .ecproj file."}, "demo": {"type": "boolean"}, "new": {"type": "boolean"}}), &[])
+            schema(json!({"path": {"type": "string", "description": "Path of an .ecproj file."}, "new": {"type": "boolean"}}), &[])
         },
         run: open_project,
     },

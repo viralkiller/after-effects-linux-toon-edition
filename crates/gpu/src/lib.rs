@@ -86,7 +86,7 @@ mod walk;
 
 use std::sync::Arc;
 
-pub use context::{GpuContext, GpuImage, TransferStats};
+pub use context::{GpuContext, GpuImage, MemoryStats, TransferStats};
 use effectcraft_effects::Buf;
 use effectcraft_project::ItemId;
 use effectcraft_raster::Image;
@@ -189,6 +189,9 @@ impl Gpu {
     pub fn render_display(&self, r: &Renderer, comp: ItemId, t: Tick) -> Option<DisplayFrame> {
         self.ctx.check_health().map_err(|e| log::error!("gpu display: {e}")).ok()?;
         let mut e = Enc::new(&self.ctx);
+        if std::env::var("EFFECTCRAFT_GPU_FP16").as_deref() == Ok("1") && preview_half_eligible(r, comp, 0) {
+            e.enable_half();
+        }
         let img = walk::render(&mut e, r, comp, t)?;
         let texture = e.display(&img);
         e.submit();
@@ -457,3 +460,46 @@ mod tests_fx_warp;
 mod tests_init;
 #[cfg(test)]
 mod tests_particles;
+
+/// FP16 is an explicit display-preview option. Exports, HDR, 3D, motion accumulation and
+/// specialized effect pipelines retain FP32. Shader arithmetic is FP32 in both variants.
+fn preview_half_eligible(r: &Renderer, comp: ItemId, depth: usize) -> bool {
+    use effectcraft_project::{GroupKind, LayerSource, Quality};
+    if depth > 16 || r.pipe().levels.is_none() {
+        return false;
+    }
+    let Some(c) = r.project.comp(comp) else { return false };
+    if r.opts.motion_blur && c.enable_motion_blur {
+        return false;
+    }
+    c.layers.iter().all(|l| {
+        !l.is_3d()
+            && r.quality(l) != Quality::Wireframe
+            && l.effects().is_none_or(|g| {
+                g.groups().all(|f| {
+                    !f.enabled
+                        || match &f.kind {
+                            GroupKind::Effect { effect } => matches!(
+                                effect.as_str(),
+                                "ec.blur.gaussian"
+                                    | "ec.blur.fastbox"
+                                    | "ec.blur.directional"
+                                    | "ec.perspective.dropshadow"
+                                    | "ec.color.levels"
+                                    | "ec.color.curves"
+                                    | "ec.color.huesaturation"
+                                    | "ec.channel.invert"
+                            ),
+                            _ => false,
+                        }
+                })
+            })
+            && match l.source {
+                LayerSource::Comp { item } => preview_half_eligible(r, item, depth + 1),
+                _ => true,
+            }
+    })
+}
+
+#[cfg(test)]
+mod tests_2d_optimizations;

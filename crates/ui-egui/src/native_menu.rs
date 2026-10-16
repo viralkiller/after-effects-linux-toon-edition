@@ -368,7 +368,7 @@ mod tests {
 
     fn app() -> EffectcraftApp {
         let mut s = effectcraft_engine::Session::default();
-        s.execute("file.openDemoProject", json!({})).unwrap();
+        effectcraft_engine::commands::open_demo_fixture(&mut s).unwrap();
         EffectcraftApp::new(s)
     }
 

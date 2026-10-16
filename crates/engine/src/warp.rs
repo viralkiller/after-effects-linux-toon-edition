@@ -307,6 +307,9 @@ impl Session {
     /// Start analysing Warp Stabilizer `effect` on `layer`. `wait`: block until done (wasm32
     /// always does). Returns the number of frames.
     pub fn start_warp(&mut self, comp: ItemId, layer: LayerId, effect: Uid, wait: bool) -> Result<usize, String> {
+        if crate::feature_policy::removed_command("track.warpStabilizer") {
+            return Err("Tracking has been removed from this fork".into());
+        }
         if self.is_warp_analyzing() {
             return Err("a Warp Stabilizer analysis is already running".into());
         }

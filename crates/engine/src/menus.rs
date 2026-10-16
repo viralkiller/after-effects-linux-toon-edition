@@ -705,9 +705,6 @@ Composition
   Composition Flowchart | comp.flowchart
   Composition Mini-Flowchart | comp.miniFlowchart
   ---
-  VR
-    Create VR Environment... | comp.vr.createEnvironment
-    Extract Cubemap... | comp.vr.extractCubemap
 Layer
   New
     Text | layer.newText
@@ -717,7 +714,6 @@ Layer
     Null Object | layer.newNull
     Shape Layer | layer.newShape
     Adjustment Layer | layer.newAdjustment
-    Content-Aware Fill Layer... | layer.newContentAwareFill
     Cube | layer.new3dPrimitive {"kind":"cube"}
     Sphere | layer.new3dPrimitive {"kind":"sphere"}
     Plane | layer.new3dPrimitive {"kind":"plane"}
@@ -739,7 +735,6 @@ Layer
     Reset Mask | layer.mask.reset
     Remove Mask | layer.mask.remove
     Remove All Masks | layer.mask.removeAll
-    Track Mask | track.mask
     Mode
       None | layer.mask.mode {"mode":"None"}
       Add | layer.mask.mode {"mode":"Add"}
@@ -1040,12 +1035,6 @@ Animation
   Add Expression | prop.setExpression
   Add Property to Essential Graphics | essential.addProperty
   Separate Dimensions | prop.separateDimensions
-  Track Camera | track.camera
-  Warp Stabilizer VFX | track.warpStabilizer
-  Track Motion | track.motion
-  Stabilize Motion | track.stabilize
-  Track Mask | track.mask
-  Track this Property | track.property
   ---
   Reveal Properties with Keyframes | anim.reveal {"kind":"keyframes"} | U
   Reveal Properties with Animation | anim.reveal {"kind":"animation"}
@@ -1142,7 +1131,6 @@ Window
   Workspace
     Default | window.workspace {"name":"Default"} | Shift+F10
     Review | window.workspace {"name":"Review"}
-    Learn | window.workspace {"name":"Learn"}
     Small Screen | window.workspace {"name":"Small Screen"} | Shift+F12
     Standard | window.workspace {"name":"Standard"} | Shift+F11
     ---
@@ -1152,7 +1140,6 @@ Window
     Effects | window.workspace {"name":"Effects"}
     Essential Graphics | window.workspace {"name":"Essential Graphics"}
     Minimal | window.workspace {"name":"Minimal"}
-    Motion Tracking | window.workspace {"name":"Motion Tracking"}
     Paint | window.workspace {"name":"Paint"}
     Text | window.workspace {"name":"Text"}
     Undocked Panels | window.workspace {"name":"Undocked Panels"}
@@ -1169,14 +1156,10 @@ Window
   Audio | window.panel {"panel":"audio"} | Cmd+4
   Brushes | window.panel {"panel":"brushes"} | Cmd+9
   Character | window.panel {"panel":"character"} | Cmd+6
-  Content-Aware Fill | window.panel {"panel":"contentAwareFill"}
   Effects & Presets | window.panel {"panel":"effectsPresets"} | Cmd+5
   Essential Graphics | window.panel {"panel":"essentialGraphics"}
   Info | window.panel {"panel":"info"} | Cmd+2
-  Learn | help.inAppTutorials
   Lumetri Scopes | window.panel {"panel":"lumetriScopes"}
-  Mask Interpolation | window.panel {"panel":"maskInterpolation"}
-  Media Browser | window.panel {"panel":"mediaBrowser"}
   Metadata | window.panel {"panel":"metadata"}
   Motion Sketch | window.panel {"panel":"motionSketch"}
   Paint | window.panel {"panel":"paint"} | Cmd+8
@@ -1187,7 +1170,6 @@ Window
   Script Console | window.panel {"panel":"scriptConsole"}
   Smoother | window.panel {"panel":"smoother"}
   Tools | window.panel {"panel":"tools"} | Cmd+1
-  Tracker | window.panel {"panel":"tracker"}
   Wiggler | window.panel {"panel":"wiggler"}
   ---
   Composition | window.panel {"panel":"composition"}
@@ -1201,7 +1183,6 @@ Window
   @dynamic:openViewers
   ---
   Create Nulls From Paths | window.panel {"panel":"createNullsFromPaths"}
-  VR Comp Editor | window.panel {"panel":"vrCompEditor"}
   @dynamic:scriptPanels
 Help
   EffectCraft Help... | help.docs {"page":"help"} | F1
@@ -1211,20 +1192,10 @@ Help
   Animation Presets... | anim.browsePresets
   Keyboard Shortcuts... | app.keyboardShortcuts
   ---
-  In-App Tutorials... | help.inAppTutorials
-  Online Tutorials... | help.onlineTutorials
-  ---
   System Compatibility Report... | help.systemReport
   Enable Logging | help.enableLogging
   Reveal Logging File | help.revealLogFile
   ---
-  Join the ArtCraft Discord... | help.discord
-  Provide Feedback... | help.reportIssue
-  ---
-  ArtCraft Website | help.website
-  EffectCraft Home Page | help.appPage
-  EffectCraft on GitHub | help.github
-  Open Demo Project | file.openDemoProject
   [!mac] ---
   [!mac] About EffectCraft... | app.about
 "#;

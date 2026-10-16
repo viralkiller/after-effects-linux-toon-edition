@@ -894,7 +894,7 @@ mod tests {
     #[test]
     fn protocol_round_trips() {
         let mut s = Session::default();
-        s.execute("file.openDemoProject", serde_json::json!({})).unwrap();
+        crate::commands::open_demo_fixture(&mut s).unwrap();
         let comp = s.active_comp_id().unwrap();
         s.execute("renderQueue.add", serde_json::json!({})).unwrap();
         let item = s.project.render_queue[0].clone();
@@ -1014,7 +1014,7 @@ mod tests {
             offload: Some(Arc::new(Inline)),
             ..Default::default()
         };
-        s.execute("file.openDemoProject", serde_json::json!({})).unwrap();
+        crate::commands::open_demo_fixture(&mut s).unwrap();
         s.execute("renderQueue.add", serde_json::json!({"output": "/x.gif"})).unwrap();
         let ids = s.start_render(false).unwrap();
         // (the inline offload has replied already; replies are applied when polled)

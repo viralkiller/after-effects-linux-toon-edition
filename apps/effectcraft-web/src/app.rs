@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use effectcraft_engine::Session;
 
-use crate::{api, audio, browse, diskcache, files, frames, persist, storage, worker};
+use crate::{api, audio, diskcache, files, frames, persist, storage, worker};
 use effectcraft_ui_egui::EffectcraftApp;
 use serde_json::json;
 use wasm_bindgen::prelude::*;
@@ -152,7 +152,6 @@ pub fn session() -> Session {
             worker::set_job_worker_gpu(!query_flag("nogpuworkers"));
             Arc::new(worker::WorkerOffload) as Arc<dyn effectcraft_engine::offload::Offload>
         }),
-        browser: Some(Arc::new(browse::WebBrowser)),
         storage: Some(Arc::new(storage::WebStorage)),
         ..Default::default()
     }
@@ -200,7 +199,6 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
     };
     api::set_info("storage", json!({"backend": persist::backend(), "entries": stored, "loadMs": js_sys::Date::now() - t0}));
     audio::install_unlock();
-    browse::restore();
     diskcache::init();
     storage::refresh();
     let runner = eframe::WebRunner::new();
@@ -234,12 +232,7 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
                 let mut session = session();
                 session.load_settings();
                 let recovery = session.begin_recovery();
-                // `?empty`: a blank project; `?demo`: the demo project; otherwise the last visit's
-                // project (the demo on a first visit).
-                let restored = !empty && !query_flag("demo") && persist::restore(&mut session);
-                if !restored && !empty {
-                    let _ = session.execute("file.openDemoProject", json!({}));
-                }
+                let restored = !empty && persist::restore(&mut session);
                 api::set_info("restored", json!(restored));
                 // The ScriptUI panels open on the last visit open again.
                 let _ = session.execute("window.restoreScriptPanels", json!({}));

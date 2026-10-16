@@ -1076,10 +1076,16 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
             Value::Null
         }
         "track.editTargetDialog" => {
+            if effectcraft_engine::feature_policy::removed_command("track.editTargetDialog") {
+                return Err("Tracking has been removed from this fork".into());
+            }
             crate::panels::tracker::open_target(app)?;
             Value::Null
         }
         "track.optionsDialog" => {
+            if effectcraft_engine::feature_policy::removed_command("track.optionsDialog") {
+                return Err("Tracking has been removed from this fork".into());
+            }
             crate::panels::tracker::open_options(app)?;
             Value::Null
         }
@@ -1121,17 +1127,9 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
             crate::panels::dialogs::open_form(app, "file.interpretFootage", &json!({}));
             Value::Null
         }
-        // Help ▸ In-App Tutorials: the Home screen's Learn tab.
-        "help.inAppTutorials" => {
-            app.ui.start_screen = true;
-            app.ui.home_learn = true;
-            app.ui.home_templates = false;
-            Value::Null
-        }
         // File ▸ New ▸ New Project from Template…: the Home screen's Templates tab.
         "file.newFromTemplate" => {
             app.ui.start_screen = true;
-            app.ui.home_learn = false;
             app.ui.home_templates = true;
             Value::Null
         }

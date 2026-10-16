@@ -1,9 +1,8 @@
 //! EffectCraft desktop app.
 //!
-//! Usage: `effectcraft [--control <port>] [--demo|--empty|--home] [project.ecproj | media files…]`
+//! Usage: `effectcraft [--control <port>] [--empty|--home] [project.ecproj | media files…]`
 //!
 //! Without a project the app starts with an empty Untitled Project, as After Effects does;
-//! `--demo` opens the demo project instead (also Help ▸ Open Demo Project).
 //!
 //! `--control <port>` (or `EFFECTCRAFT_CONTROL_PORT`) starts a localhost JSON-lines control server;
 //! see `effectcraft_ui_egui::control` for the methods.
@@ -63,8 +62,6 @@ fn wayland_drop_notice(wayland_display: Option<&std::ffi::OsStr>, backend: Optio
 struct Args {
     control_port: Option<u16>,
     files: Vec<String>,
-    /// Open the demo project when no project is given (`--demo`).
-    demo: bool,
     /// Show or skip the Home screen (`--home`), else the Startup preference decides.
     home: Option<bool>,
 }
@@ -77,8 +74,8 @@ fn parse_args(args: impl IntoIterator<Item = String>, env_port: Option<String>) 
     while let Some(a) = args.next() {
         match a.as_str() {
             "--control" => out.control_port = args.next().and_then(|p| p.parse().ok()),
-            "--demo" => out.demo = true,
-            "--empty" => out.demo = false,
+            "--demo" => eprintln!("Demo projects have been removed from this fork; opening an empty project."),
+            "--empty" => {},
             "--home" => out.home = Some(true),
             "--version" => return None,
             _ => out.files.push(a),
@@ -91,7 +88,7 @@ fn main() -> eframe::Result {
     // Help ▸ Enable Logging writes through this logger; warnings feed the compatibility report.
     effectcraft_engine::logging::install();
     effectcraft_engine::logging::install_panic_hook();
-    let Some(Args { control_port, files, demo, home }) = parse_args(std::env::args().skip(1), std::env::var("EFFECTCRAFT_CONTROL_PORT").ok()) else {
+    let Some(Args { control_port, files, home }) = parse_args(std::env::args().skip(1), std::env::var("EFFECTCRAFT_CONTROL_PORT").ok()) else {
         println!("effectcraft {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     };
@@ -176,8 +173,6 @@ fn main() -> eframe::Result {
                 if let Err(e) = session.execute("file.open", json!({"path": p})) {
                     eprintln!("effectcraft: {e}");
                 }
-            } else if demo {
-                let _ = session.execute("file.openDemoProject", json!({}));
             }
             let media: Vec<String> = files.iter().filter(|f| !is_project_file(f)).cloned().collect();
             if !media.is_empty()
@@ -448,8 +443,8 @@ mod tests {
     #[test]
     fn no_arguments_start_an_empty_project() {
         assert_eq!(parse(&[]), Some(Args::default()));
-        assert!(parse(&["--demo"]).is_some_and(|a| a.demo));
-        assert!(parse(&["--demo", "--empty"]).is_some_and(|a| !a.demo));
+        assert_eq!(parse(&["--demo"]), Some(Args::default()));
+        assert_eq!(parse(&["--demo", "--empty"]), Some(Args::default()));
         let a = parse(&["--control", "9877", "--home", "a.ecproj"]).unwrap_or_default();
         assert_eq!((a.control_port, a.home, a.files), (Some(9877), Some(true), vec!["a.ecproj".to_string()]));
         assert_eq!(parse(&["--version"]), None);

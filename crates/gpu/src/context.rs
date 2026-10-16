@@ -9,6 +9,7 @@ use effectcraft_raster::Image;
 /// Compute entry points in `kernels.wgsl` (one pipeline each).
 const ENTRIES: &[&str] = &[
     "warp_blend",
+    "copy_pixels",
     "blend_full",
     "matte",
     "preserve",
@@ -59,6 +60,10 @@ pub struct GpuImage {
 
 impl GpuImage {
     /// An image on a texture of its own (not pooled).
+    pub(crate) fn exclusive(&self) -> bool {
+        self._lease.as_ref().is_some_and(|l| Arc::strong_count(l) == 1)
+    }
+
     pub fn new(texture: wgpu::Texture, width: u32, height: u32) -> GpuImage {
         GpuImage { texture, width, height, _lease: None, levels: None }
     }
@@ -95,13 +100,14 @@ impl Drop for Lease {
 /// it was released has been submitted (or dropped).
 #[derive(Default)]
 pub(crate) struct Pool {
-    free: HashMap<(u32, u32), Vec<wgpu::Texture>>,
+    free: HashMap<(u32, u32, wgpu::TextureFormat), Vec<wgpu::Texture>>,
     /// (texture, newest encoder open at its release).
     released: Vec<(wgpu::Texture, u64)>,
     /// Encoders with recorded, unsubmitted work.
     open: BTreeSet<u64>,
     next: u64,
     bytes: usize,
+    budget: Option<usize>,
     /// Working textures reused / newly allocated (diagnostics, tests).
     hits: u64,
     misses: u64,
@@ -135,7 +141,7 @@ impl Transfers {
 }
 
 fn tex_bytes(t: &wgpu::Texture) -> usize {
-    t.width() as usize * t.height() as usize * 16
+    t.width() as usize * t.height() as usize * if t.format() == wgpu::TextureFormat::Rgba16Float { 8 } else { 16 }
 }
 
 impl Pool {
@@ -148,11 +154,11 @@ impl Pool {
 
     fn make_free(&mut self, t: wgpu::Texture) {
         let b = tex_bytes(&t);
-        if self.bytes + b > POOL_BUDGET {
+        if self.bytes.saturating_add(b) > self.budget.unwrap_or(POOL_BUDGET) {
             return;
         }
         self.bytes += b;
-        self.free.entry((t.width(), t.height())).or_default().push(t);
+        self.free.entry((t.width(), t.height(), t.format())).or_default().push(t);
     }
 
     fn open(&mut self) -> u64 {
@@ -175,8 +181,8 @@ impl Pool {
         }
     }
 
-    fn take(&mut self, w: u32, h: u32) -> Option<wgpu::Texture> {
-        let t = self.free.get_mut(&(w, h)).and_then(Vec::pop);
+    fn take(&mut self, w: u32, h: u32, format: wgpu::TextureFormat) -> Option<wgpu::Texture> {
+        let t = self.free.get_mut(&(w, h, format)).and_then(Vec::pop);
         match &t {
             Some(t) => {
                 self.bytes -= tex_bytes(t);
@@ -232,7 +238,39 @@ struct Uploads {
 }
 
 /// The device and everything compiled for it.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MemoryStats {
+    pub upload_bytes: usize,
+    pub resident_bytes: usize,
+    pub reusable_bytes: usize,
+    pub pending_release_bytes: usize,
+    pub staging_bytes: usize,
+    pub zero_bytes: usize,
+}
+
+struct HalfPipes {
+    bgl: wgpu::BindGroupLayout,
+    pipelines: HashMap<&'static str, wgpu::ComputePipeline>,
+}
+struct Resident {
+    img: GpuImage,
+    offset: [f64; 2],
+    scale: f64,
+    stamp: u64,
+}
+#[derive(Default)]
+struct Residents {
+    map: HashMap<u64, Resident>,
+    clock: u64,
+}
+
 pub struct GpuContext {
+    half_supported: bool,
+    half: std::sync::OnceLock<Option<HalfPipes>>,
+    residents: Mutex<Residents>,
+    upload_budget: std::sync::atomic::AtomicUsize,
+    resident_budget: std::sync::atomic::AtomicUsize,
+    auxiliary_budget: std::sync::atomic::AtomicUsize,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub(crate) name: String,
@@ -256,7 +294,7 @@ pub struct GpuContext {
     /// Readback staging buffers by size.
     staging: Mutex<HashMap<u64, Vec<wgpu::Buffer>>>,
     /// Transparent read-only images by size (see [`Enc::zeros`]).
-    zeros: Mutex<HashMap<(u32, u32), GpuImage>>,
+    zeros: Mutex<HashMap<(u32, u32, wgpu::TextureFormat), GpuImage>>,
     /// Advanced 3D render pipelines (built on first use).
     pub(crate) adv3d: std::sync::OnceLock<crate::adv3d::Pipes>,
     /// The adapter can run the Advanced 3D rasteriser (`adv3d::raster_unsupported`); without
@@ -346,7 +384,151 @@ pub(crate) fn buffer_init(device: &wgpu::Device, queue: &wgpu::Queue, label: Opt
     buffer
 }
 
+fn kernel_source() -> String {
+    [
+        include_str!("shaders/common.wgsl"),
+        include_str!("shaders/kernels.wgsl"),
+        include_str!("shaders/classic3d.wgsl"),
+        include_str!("shaders/fx_color.wgsl"),
+        include_str!("shaders/fx_distort.wgsl"),
+        include_str!("shaders/fx_generate.wgsl"),
+        include_str!("shaders/fx_key.wgsl"),
+        include_str!("shaders/fx_stylize.wgsl"),
+        include_str!("shaders/fx_noise.wgsl"),
+        include_str!("shaders/fx_tone.wgsl"),
+        include_str!("shaders/fx_warp.wgsl"),
+        include_str!("shaders/fx_extra.wgsl"),
+        include_str!("shaders/fx_depth.wgsl"),
+        include_str!("shaders/fx_lut.wgsl"),
+        include_str!("shaders/fx_sim.wgsl"),
+        include_str!("shaders/fx_particles.wgsl"),
+        include_str!("shaders/fx_vr.wgsl"),
+        include_str!("shaders/fx_light.wgsl"),
+        include_str!("shaders/fx_transition.wgsl"),
+        include_str!("shaders/fx_text.wgsl"),
+        include_str!("shaders/fx_time.wgsl"),
+        include_str!("shaders/fx_pixel2.wgsl"),
+        include_str!("shaders/fx_gen2.wgsl"),
+        include_str!("shaders/sky.wgsl"),
+    ]
+    .concat()
+}
+
 impl GpuContext {
+    fn half_pipes(&self) -> Option<&HalfPipes> {
+        if !self.half_supported || cfg!(target_arch = "wasm32") {
+            return None;
+        }
+        self.half.get_or_init(|| self.build_half().map_err(|e| log::warn!("FP16 preview unavailable: {e}")).ok()).as_ref()
+    }
+    fn build_half(&self) -> Result<HalfPipes, String> {
+        let device = &self.device;
+        let module = init_resource(device, "half-float preview shaders", || {
+            device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("half-float preview"),
+                source: wgpu::ShaderSource::Wgsl(kernel_source().replace("rgba32float", "rgba16float").into()),
+            })
+        })?;
+        let bgl = init_resource(device, "half-float bindings", || {
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("half-float bindings"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                        count: None,
+                    },
+                    tex_entry(1),
+                    tex_entry(2),
+                    storage_tex_entry(3, wgpu::TextureFormat::Rgba16Float),
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            })
+        })?;
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("half-float kernels"),
+            bind_group_layouts: &[Some(&bgl)],
+            immediate_size: 0,
+        });
+        let mut pipelines = HashMap::new();
+        // Preview eligibility excludes 3D and specialized multi-output pipelines.
+        for &entry in self.pipelines.keys().filter(|e| !EXT_ENTRIES.contains(e)) {
+            let pipe = init_resource(device, entry, || {
+                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some(entry),
+                    layout: Some(&layout),
+                    module: &module,
+                    entry_point: Some(entry),
+                    compilation_options: Default::default(),
+                    cache: None,
+                })
+            })?;
+            pipelines.insert(entry, pipe);
+        }
+        Ok(HalfPipes { bgl, pipelines })
+    }
+
+    pub(crate) fn resident_get(&self, key: u64) -> Option<(GpuImage, [f64; 2], f64)> {
+        let mut r = self.residents.lock().ok()?;
+        r.clock = r.clock.wrapping_add(1);
+        let now = r.clock;
+        let v = r.map.get_mut(&key)?;
+        v.stamp = now;
+        Some((v.img.clone(), v.offset, v.scale))
+    }
+    pub(crate) fn resident_put(&self, key: u64, img: GpuImage, offset: [f64; 2], scale: f64) {
+        let budget = self.resident_budget.load(std::sync::atomic::Ordering::Relaxed);
+        if tex_bytes(&img.texture) > budget / 4 {
+            return;
+        }
+        let Ok(mut r) = self.residents.lock() else { return };
+        r.clock = r.clock.wrapping_add(1);
+        let stamp = r.clock;
+        r.map.insert(key, Resident { img, offset, scale, stamp });
+        while r.map.values().map(|v| tex_bytes(&v.img.texture)).sum::<usize>() > budget {
+            let Some(key) = r.map.iter().min_by_key(|(_, v)| v.stamp).map(|(k, _)| *k) else { break };
+            r.map.remove(&key);
+        }
+    }
+
+    pub fn memory_stats(&self) -> MemoryStats {
+        let upload_bytes = self.uploads.lock().map(|u| u.bytes).unwrap_or(0);
+        let resident_bytes = self.residents.lock().map(|r| r.map.values().map(|v| tex_bytes(&v.img.texture)).sum()).unwrap_or(0);
+        let (reusable_bytes, pending_release_bytes) =
+            self.pool.lock().map(|p| (p.bytes, p.released.iter().map(|(t, _)| tex_bytes(t)).sum())).unwrap_or_default();
+        let staging_bytes = self.staging.lock().map(|s| s.iter().map(|(n, v)| (*n as usize).saturating_mul(v.len())).sum()).unwrap_or(0);
+        let zero_bytes = self.zeros.lock().map(|s| s.values().map(|v| tex_bytes(&v.texture)).sum()).unwrap_or(0);
+        MemoryStats { upload_bytes, resident_bytes, reusable_bytes, pending_release_bytes, staging_bytes, zero_bytes }
+    }
+
+    /// Share one working-set budget between uploads, resident effects, and reusable textures.
+    /// In-flight images are not evictable; the viewer also limits simultaneous frame jobs.
+    pub fn set_memory_budget(&self, bytes: usize) {
+        use std::sync::atomic::Ordering::Relaxed;
+        let old = self.upload_budget.swap(bytes / 2, Relaxed);
+        self.resident_budget.store(bytes / 4, Relaxed);
+        self.auxiliary_budget.store(bytes / 8, Relaxed);
+        if let Ok(mut p) = self.pool.lock() {
+            p.budget = Some(bytes / 8);
+            if p.bytes > bytes / 8 {
+                p.clear();
+            }
+        }
+        if old > bytes / 2 {
+            self.clear_uploads();
+        }
+    }
+
     /// [`buffer_init`] on this context's device.
     pub(crate) fn buffer_init(&self, label: Option<&str>, contents: &[u8], usage: wgpu::BufferUsages) -> wgpu::Buffer {
         buffer_init(&self.device, &self.queue, label, contents, usage)
@@ -393,33 +575,7 @@ impl GpuContext {
         if let Some(why) = &adv3d_unsupported {
             log::info!("gpu {name}: Advanced 3D renders on the CPU ({why})");
         }
-        let src = [
-            include_str!("shaders/common.wgsl"),
-            include_str!("shaders/kernels.wgsl"),
-            include_str!("shaders/classic3d.wgsl"),
-            include_str!("shaders/fx_color.wgsl"),
-            include_str!("shaders/fx_distort.wgsl"),
-            include_str!("shaders/fx_generate.wgsl"),
-            include_str!("shaders/fx_key.wgsl"),
-            include_str!("shaders/fx_stylize.wgsl"),
-            include_str!("shaders/fx_noise.wgsl"),
-            include_str!("shaders/fx_tone.wgsl"),
-            include_str!("shaders/fx_warp.wgsl"),
-            include_str!("shaders/fx_extra.wgsl"),
-            include_str!("shaders/fx_depth.wgsl"),
-            include_str!("shaders/fx_lut.wgsl"),
-            include_str!("shaders/fx_sim.wgsl"),
-            include_str!("shaders/fx_particles.wgsl"),
-            include_str!("shaders/fx_vr.wgsl"),
-            include_str!("shaders/fx_light.wgsl"),
-            include_str!("shaders/fx_transition.wgsl"),
-            include_str!("shaders/fx_text.wgsl"),
-            include_str!("shaders/fx_time.wgsl"),
-            include_str!("shaders/fx_pixel2.wgsl"),
-            include_str!("shaders/fx_gen2.wgsl"),
-            include_str!("shaders/sky.wgsl"),
-        ]
-        .concat();
+        let src = kernel_source();
         let module = init_resource(&device, "kernels shader module", || {
             device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("effectcraft kernels"), source: wgpu::ShaderSource::Wgsl(src.into()) })
         })?;
@@ -579,7 +735,16 @@ impl GpuContext {
             init_resource(&device, "dummy storage buffer", || buffer_init(&device, &queue, Some("dummy"), &[0u8; 16], wgpu::BufferUsages::STORAGE))?;
         let dummy_tex = init_resource(&device, "dummy texture view", || dummy.create_view(&Default::default()))?;
         let max_dim = device.limits().max_texture_dimension_2d;
+        let half_supported = adapter.get_texture_format_features(wgpu::TextureFormat::Rgba16Float).allowed_usages.contains(
+            wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST,
+        );
         Ok(GpuContext {
+            half_supported,
+            half: Default::default(),
+            residents: Default::default(),
+            upload_budget: std::sync::atomic::AtomicUsize::new(UPLOAD_BUDGET),
+            resident_budget: std::sync::atomic::AtomicUsize::new(256 << 20),
+            auxiliary_budget: std::sync::atomic::AtomicUsize::new(128 << 20),
             device,
             queue,
             name,
@@ -794,13 +959,16 @@ impl GpuContext {
     }
 
     fn texture(&self, w: u32, h: u32) -> wgpu::Texture {
+        self.texture_format(w, h, FORMAT)
+    }
+    fn texture_format(&self, w: u32, h: u32, format: wgpu::TextureFormat) -> wgpu::Texture {
         self.device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size: wgpu::Extent3d { width: w.max(1), height: h.max(1), depth_or_array_layers: 1 },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: FORMAT,
+            format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         })
@@ -808,11 +976,11 @@ impl GpuContext {
 
     /// A pooled working texture: (image, reused). A reused texture holds old pixels; a new
     /// one is zeroed.
-    fn pooled(&self, w: u32, h: u32) -> (GpuImage, bool) {
+    fn pooled(&self, w: u32, h: u32, format: wgpu::TextureFormat) -> (GpuImage, bool) {
         let (w, h) = (w.max(1), h.max(1));
-        let reused = self.pool.lock().ok().and_then(|mut p| p.take(w, h));
+        let reused = self.pool.lock().ok().and_then(|mut p| p.take(w, h, format));
         let was_reused = reused.is_some();
-        let texture = reused.unwrap_or_else(|| self.texture(w, h));
+        let texture = reused.unwrap_or_else(|| self.texture_format(w, h, format));
         let lease = Arc::new(Lease { texture: texture.clone(), pool: Arc::downgrade(&self.pool) });
         (GpuImage { texture, width: w, height: h, _lease: Some(lease), levels: None }, was_reused)
     }
@@ -873,7 +1041,8 @@ impl GpuContext {
             }
             u.bytes += bytes;
             // Drop textures of freed buffers, then the least recently used over budget.
-            if u.bytes > UPLOAD_BUDGET {
+            let budget = self.upload_budget.load(std::sync::atomic::Ordering::Relaxed);
+            if u.bytes > budget || now.is_multiple_of(64) {
                 let dead: Vec<usize> = u.map.iter().filter(|(_, e)| e.buf.strong_count() == 0).map(|(k, _)| *k).collect();
                 for k in dead {
                     if let Some(e) = u.map.remove(&k) {
@@ -881,7 +1050,7 @@ impl GpuContext {
                     }
                 }
             }
-            while u.bytes > UPLOAD_BUDGET {
+            while u.bytes > budget {
                 let Some(k) = u.map.iter().min_by_key(|(_, e)| e.last_use).map(|(k, _)| *k) else { break };
                 if let Some(e) = u.map.remove(&k) {
                     u.bytes -= e.bytes;
@@ -893,6 +1062,9 @@ impl GpuContext {
 
     /// Forget uploaded layer textures.
     pub fn clear_uploads(&self) {
+        if let Ok(mut r) = self.residents.lock() {
+            r.map.clear();
+        }
         if let Ok(mut u) = self.uploads.lock() {
             u.map.clear();
             u.bytes = 0;
@@ -903,6 +1075,9 @@ impl GpuContext {
         if let Ok(mut s) = self.staging.lock() {
             s.clear();
         }
+        if let Ok(mut z) = self.zeros.lock() {
+            z.clear();
+        }
     }
 }
 
@@ -912,6 +1087,8 @@ pub(crate) struct Enc<'g> {
     /// The open command encoder and its id in the texture pool.
     enc: Option<(wgpu::CommandEncoder, u64)>,
     pending: usize,
+    pending_bytes: usize,
+    format: wgpu::TextureFormat,
     /// A dispatch named a kernel the device doesn't have (see [`Enc::take_missing`]).
     missing: bool,
 }
@@ -929,7 +1106,27 @@ impl Drop for Enc<'_> {
 
 impl<'g> Enc<'g> {
     pub fn new(g: &'g GpuContext) -> Enc<'g> {
-        Enc { g, enc: None, pending: 0, missing: false }
+        Enc { g, enc: None, pending: 0, pending_bytes: 0, format: FORMAT, missing: false }
+    }
+
+    pub(crate) fn is_half(&self) -> bool {
+        self.format == wgpu::TextureFormat::Rgba16Float
+    }
+    pub(crate) fn enable_half(&mut self) -> bool {
+        if self.g.half_pipes().is_none() {
+            return false;
+        }
+        self.format = wgpu::TextureFormat::Rgba16Float;
+        true
+    }
+    fn convert_format(&mut self, img: &GpuImage, format: wgpu::TextureFormat) -> GpuImage {
+        if img.texture.format() == format {
+            return img.clone();
+        }
+        let (mut out, _) = self.g.pooled(img.width, img.height, format);
+        self.pixels("copy_pixels", &Params::default(), img, None, &out, None);
+        out.levels = img.levels;
+        out
     }
 
     /// Whether a dispatch since the last call named a kernel the device doesn't have (one
@@ -951,7 +1148,7 @@ impl<'g> Enc<'g> {
 
     /// A new zeroed image (pooled; a reused texture is cleared by a kernel).
     pub fn image(&mut self, w: u32, h: u32) -> GpuImage {
-        let (img, reused) = self.g.pooled(w, h);
+        let (img, reused) = self.g.pooled(w, h, self.format);
         if reused {
             self.fill(&img, 0.0);
         }
@@ -961,7 +1158,7 @@ impl<'g> Enc<'g> {
     /// A new image for a kernel that writes every pixel of it (pooled; contents undefined).
     /// Under test it starts out as NaNs, so a kernel that skips pixels fails the CPU oracle.
     pub fn scratch(&mut self, w: u32, h: u32) -> GpuImage {
-        let (img, _) = self.g.pooled(w, h);
+        let (img, _) = self.g.pooled(w, h, self.format);
         if cfg!(test) {
             self.fill(&img, f32::NAN);
         }
@@ -971,11 +1168,21 @@ impl<'g> Enc<'g> {
     /// A transparent image to read from (shared per size; never written).
     pub fn zeros(&self, w: u32, h: u32) -> GpuImage {
         let (w, h) = (w.max(1), h.max(1));
-        let Ok(mut z) = self.g.zeros.lock() else { return self.g.image(w, h) };
-        if z.len() > 8 && !z.contains_key(&(w, h)) {
-            z.clear();
+        let key = (w, h, self.format);
+        let make = || GpuImage::new(self.g.texture_format(w, h, self.format), w, h);
+        let Ok(mut z) = self.g.zeros.lock() else { return make() };
+        let budget = self.g.auxiliary_budget.load(std::sync::atomic::Ordering::Relaxed) / 2;
+        let bytes = w as usize * h as usize * if self.is_half() { 8 } else { 16 };
+        if bytes > budget {
+            return make();
         }
-        z.entry((w, h)).or_insert_with(|| self.g.image(w, h)).clone()
+        if !z.contains_key(&key) {
+            while z.values().map(|v| tex_bytes(&v.texture)).sum::<usize>().saturating_add(bytes) > budget {
+                let Some(k) = z.keys().next().copied() else { break };
+                z.remove(&k);
+            }
+        }
+        z.entry(key).or_insert_with(make).clone()
     }
 
     /// Set every pixel of `img` to `v`.
@@ -1014,7 +1221,9 @@ impl<'g> Enc<'g> {
         ext: Option<[&wgpu::Buffer; 4]>,
     ) {
         let g = self.g;
-        let Some(pipe) = g.pipelines.get(entry) else {
+        let half = (out.texture.format() == wgpu::TextureFormat::Rgba16Float).then(|| g.half.get().and_then(Option::as_ref)).flatten();
+        let (pipelines, bgl) = half.map_or((&g.pipelines, &g.bgl), |h| (&h.pipelines, &h.bgl));
+        let Some(pipe) = pipelines.get(entry) else {
             if !g.unavailable.iter().any(|(e, _)| *e == entry) {
                 log::error!("gpu: no kernel {entry}");
             }
@@ -1027,7 +1236,7 @@ impl<'g> Enc<'g> {
         let ov = out.texture.create_view(&Default::default());
         let bg = g.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
-            layout: &g.bgl,
+            layout: bgl,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: ub.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&sv) },
@@ -1060,7 +1269,8 @@ impl<'g> Enc<'g> {
         }
         self.pending += 1;
         // Keep command buffers (and the transient textures they hold) bounded.
-        if self.pending >= 256 {
+        self.pending_bytes = self.pending_bytes.saturating_add(tex_bytes(&out.texture));
+        if self.pending >= 64 || self.pending_bytes >= 64 << 20 {
             self.submit();
         }
     }
@@ -1073,6 +1283,8 @@ impl<'g> Enc<'g> {
 
     /// Copy `src` into a larger zeroed image at (`x`, `y`) (Buf::pad).
     pub fn copy_into(&mut self, src: &GpuImage, dst: &GpuImage, x: u32, y: u32) {
+        let converted = self.convert_format(src, dst.texture.format());
+        let src = &converted;
         let enc = self.encoder();
         enc.copy_texture_to_texture(
             wgpu::TexelCopyTextureInfo { texture: &src.texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
@@ -1090,10 +1302,13 @@ impl<'g> Enc<'g> {
             }
         }
         self.pending = 0;
+        self.pending_bytes = 0;
     }
 
     /// Read an image back to the CPU (submits and waits). `None` where readback is impossible.
     pub fn download(&mut self, img: &GpuImage) -> Option<Image> {
+        let full = self.convert_format(img, FORMAT);
+        let img = &full;
         let layout = crate::readback::Layout::new(img.width, img.height, 16, self.g.device.limits().max_buffer_size)
             .map_err(|e| log::error!("gpu image readback: {e}"))
             .ok()?;
@@ -1154,9 +1369,13 @@ impl<'g> Enc<'g> {
         out.copy_from_slice(&bytes);
         // Keep a few staging buffers per size (frames read back at the same size every time).
         if let Ok(mut s) = self.g.staging.lock() {
-            let v = s.entry(size).or_default();
-            if v.len() < 2 && size <= 256 << 20 {
-                v.push(buf);
+            let budget = self.g.auxiliary_budget.load(std::sync::atomic::Ordering::Relaxed) / 2;
+            let used = s.iter().map(|(n, v)| (*n as usize).saturating_mul(v.len())).sum::<usize>();
+            if used.saturating_add(size as usize) <= budget {
+                let v = s.entry(size).or_default();
+                if v.len() < 2 {
+                    v.push(buf);
+                }
             }
         }
         Some(())
@@ -1205,6 +1424,8 @@ impl<'g> Enc<'g> {
     /// copy if needed and marking the pass missed.
     pub(crate) fn read_keyed(&mut self, img: &GpuImage, key: u128, offset: [f64; 2], scale: f64) -> Option<Option<crate::deferred::Readback>> {
         use crate::deferred::Lookup;
+        let full = self.convert_format(img, FORMAT);
+        let img = &full;
         let d = self.g.deferred.clone()?;
         match d.lookup(key) {
             Lookup::Ready(r) => return Some(r),
@@ -1231,6 +1452,8 @@ impl<'g> Enc<'g> {
     /// Copy an image into a storage buffer (RGBA f32 rows) for kernels that read a third image
     /// through `data`: (buffer, row length in pixels).
     pub fn image_rows(&mut self, img: &GpuImage) -> (wgpu::Buffer, u32) {
+        let full = self.convert_format(img, FORMAT);
+        let img = &full;
         let row = (img.width * 16).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
         let buf = self.g.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("image rows"),
@@ -1300,4 +1523,18 @@ impl<'g> Enc<'g> {
 /// Mip levels of a full chain for a `w × h` texture (down to 1 × 1).
 pub(crate) fn mip_levels(w: u32, h: u32) -> u32 {
     u32::BITS - w.max(h).max(1).leading_zeros()
+}
+
+#[cfg(test)]
+mod optimization_tests {
+    #[test]
+    fn full_and_half_storage_shader_variants_validate_without_a_gpu() {
+        let full = super::kernel_source();
+        for source in [full.clone(), full.replace("rgba32float", "rgba16float")] {
+            let module = wgpu::naga::front::wgsl::parse_str(&source).unwrap_or_else(|e| panic!("{}", e.emit_to_string(&source)));
+            wgpu::naga::valid::Validator::new(wgpu::naga::valid::ValidationFlags::all(), wgpu::naga::valid::Capabilities::all())
+                .validate(&module)
+                .unwrap_or_else(|e| panic!("{}", e.emit_to_string(&source)));
+        }
+    }
 }

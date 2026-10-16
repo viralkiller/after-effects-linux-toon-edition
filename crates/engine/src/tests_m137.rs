@@ -131,37 +131,3 @@ fn trace_path_adds_a_progress_null() {
     assert!(null.props.prop("transform/position").unwrap().expr.as_ref().unwrap().text.contains("pointOnPath(effect(\"Progress\")(\"Slider\") / 100)"));
 }
 
-#[test]
-fn vr_comp_editor_turns_the_face_cameras_together() {
-    let mut s = Session::default();
-    s.execute("comp.new", json!({"name": "Scene", "width": 64, "height": 64, "frameRate": 10, "duration": 1})).unwrap();
-    s.execute("layer.newSolid", json!({"name": "Wall", "color": "#ff0000"})).unwrap();
-    s.execute("comp.vr.createEnvironment", json!({"size": 64})).unwrap();
-    let envs = s.execute("comp.vr.environments", json!({})).unwrap();
-    assert_eq!(envs.as_array().unwrap().len(), 1, "{envs}");
-    let env = &envs[0];
-    assert_eq!(env["name"], "Scene VR Output");
-    assert_eq!(env["faces"].as_array().unwrap().len(), 6);
-    let view = env["view"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect::<Vec<_>>();
-    assert!(view.iter().all(|v| v.abs() < 1e-6 || (v - 360.0).abs() < 1e-6), "{view:?}");
-    let out = env["output"].as_u64().unwrap();
-    let r = s.execute("comp.vr.setView", json!({"comp": out, "pan": 30.0})).unwrap();
-    let v = r["view"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect::<Vec<_>>();
-    assert!((v[1] - 30.0).abs() < 1e-6 && v[0].abs() < 1e-6 && v[2].abs() < 1e-6, "{v:?}");
-    // Every face camera turned: Front by 30° about Y.
-    let front = &env["faces"][4];
-    let fc = s.project.comp(effectcraft_project::ItemId(front["comp"].as_u64().unwrap())).unwrap();
-    let cam = fc.layer(effectcraft_project::LayerId(front["camera"].as_u64().unwrap())).unwrap();
-    let o = cam.props.prop("transform/orientation").unwrap().value.components();
-    assert!((o[1] - 30.0).abs() < 1e-6, "{o:?}");
-    // One undo step back to the start.
-    assert!(s.undo());
-    let envs = s.execute("comp.vr.environments", json!({})).unwrap();
-    assert!(envs[0]["view"][1].as_f64().unwrap().abs() < 1e-6);
-    // Round trip of the Euler decomposition.
-    for o in [[10.0, 20.0, 30.0], [350.0, 45.0, 5.0], [0.0, 0.0, 270.0]] {
-        let m = effectcraft_geom::Mat4::orientation(effectcraft_geom::vec3(o[0], o[1], o[2]));
-        let e = crate::commands::vr_editor::euler(m);
-        assert!(e.iter().zip(o).all(|(a, b)| (a - b).abs() < 1e-6), "{o:?} → {e:?}");
-    }
-}

@@ -514,9 +514,14 @@ pub fn find(id: &str) -> Option<&'static EffectSpec> {
 
 /// Every effect: the built-ins ([`registry`]) and the registered plug-ins
 /// ([`plugin::register_plugin`]), sorted by category then name.
+/// Effects retained only for existing project compatibility.
+pub fn legacy_only(id: &str) -> bool {
+    id == "ec.distort.warpstabilizer" || id.starts_with("ec.vr.") || matches!(id, camera_tracker::ID | face_track::POINTS_ID | face_track::MEASUREMENTS_ID | roto::ID)
+}
+
 pub fn all() -> Vec<&'static EffectSpec> {
     let plugins = plugin::plugins();
-    let mut v: Vec<&'static EffectSpec> = registry().iter().collect();
+    let mut v: Vec<&'static EffectSpec> = registry().iter().filter(|e| !legacy_only(e.id)).collect();
     if !plugins.is_empty() {
         v.extend(plugins);
         v.sort_by(|a, b| a.category.cmp(b.category).then(a.name.cmp(b.name)));

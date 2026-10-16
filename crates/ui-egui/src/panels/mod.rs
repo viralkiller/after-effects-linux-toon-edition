@@ -1,9 +1,7 @@
 //! Panel bodies.
 
 pub mod anim_tools;
-pub mod camera_tracker_ui;
 pub mod comp_settings;
-pub mod content_fill_panel;
 pub mod delete_items;
 pub mod dialogs;
 pub mod dialogs_3d;
@@ -24,7 +22,6 @@ pub mod info;
 pub mod key_dialogs;
 pub mod layer_panel;
 pub mod layer_styles_dialog;
-pub mod learn;
 pub mod markers_ui;
 pub mod media_panels;
 pub mod misc;
@@ -36,7 +33,6 @@ pub mod project;
 pub mod properties;
 pub mod puppet_tool;
 pub mod render_queue;
-pub mod roto_tool;
 pub mod rq_templates;
 pub mod scopes_panel;
 pub mod script_console;
@@ -145,13 +141,13 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: PanelKind, rect: Rec
         PanelKind::Audio => misc::audio(app, ui, rect),
         PanelKind::History => misc::history(app, ui, rect),
         PanelKind::Markers => misc::markers(app, ui, rect),
-        PanelKind::MaskInterpolation => anim_tools::mask_interpolation(app, ui, rect),
+        PanelKind::MaskInterpolation => {},
         PanelKind::ScriptConsole => script_console::show(app, ui, rect),
         PanelKind::Wiggler => anim_tools::wiggler(app, ui, rect),
         PanelKind::Smoother => anim_tools::smoother(app, ui, rect),
         PanelKind::MotionSketch => anim_tools::motion_sketch(app, ui, rect),
         PanelKind::RenderQueue => render_queue::show(app, ui, rect),
-        PanelKind::Tracker => tracker::show(app, ui, rect),
+        PanelKind::Tracker => {},
         PanelKind::Layer => layer_panel::show(app, ui, rect),
         PanelKind::Paint => paint_panels::paint(app, ui, rect),
         PanelKind::Brushes => paint_panels::brushes(app, ui, rect),
@@ -160,12 +156,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: PanelKind, rect: Rec
         PanelKind::Flowchart => flowchart::show(app, ui, rect),
         PanelKind::LumetriScopes => scopes_panel::show(app, ui, rect),
         PanelKind::Footage => footage_panel::show(app, ui, rect),
-        PanelKind::MediaBrowser => media_panels::media_browser(app, ui, rect),
+        PanelKind::MediaBrowser | PanelKind::VrCompEditor => {},
         PanelKind::Metadata => media_panels::metadata(app, ui, rect),
         PanelKind::Progress => media_panels::progress(app, ui, rect),
-        PanelKind::ContentAwareFill => content_fill_panel::show(app, ui, rect),
+        PanelKind::ContentAwareFill => {},
         PanelKind::CreateNullsFromPaths => path_vr_panels::create_nulls(app, ui, rect),
-        PanelKind::VrCompEditor => path_vr_panels::vr_editor(app, ui, rect),
     }
 }
 

@@ -24,7 +24,7 @@ fn click_at(h: &mut Harness<'_, EffectcraftApp>, p: Pos2) {
 #[test]
 fn render_settings_template_applies_from_a_menu_moved_to_fit_the_window() {
     let mut s = Session::default();
-    s.execute("file.openDemoProject", json!({})).unwrap();
+    effectcraft_engine::commands::open_demo_fixture(&mut s).unwrap();
     s.execute("renderQueue.add", json!({})).unwrap();
     let id = s.project.render_queue[0].id;
     assert_eq!(s.project.render_queue[0].settings.name, "Best Settings");
@@ -64,7 +64,7 @@ fn click_with(h: &mut Harness<'_, EffectcraftApp>, p: Pos2, modifiers: Modifiers
 #[test]
 fn clicking_the_output_file_name_opens_the_save_dialog() {
     let mut s = Session::default();
-    s.execute("file.openDemoProject", json!({})).unwrap();
+    effectcraft_engine::commands::open_demo_fixture(&mut s).unwrap();
     s.execute("renderQueue.add", json!({})).unwrap();
     let id = s.project.render_queue[0].id;
     let expected_default = s.resolve_output(&s.project.render_queue[0]).unwrap();

@@ -366,7 +366,7 @@ fn layer_comp_and_key_times_stay_frame_aligned() {
     let aligned = |fr: effectcraft_time::FrameRate, t: effectcraft_time::Tick| fr.snap(t) == t;
     // The demo project: every comp duration, layer in/out/start and key time is on a frame.
     let mut s = Session::default();
-    s.execute("file.openDemoProject", json!({})).unwrap();
+    crate::commands::open_demo_fixture(&mut s).unwrap();
     for (_, c) in s.project.comps() {
         let fr = c.frame_rate;
         assert!(aligned(fr, c.duration), "duration {:?}", c.duration);

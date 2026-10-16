@@ -105,6 +105,56 @@ pub fn warp_q(
     out
 }
 
+/// Composite into an exclusively owned canvas through a small temporary patch. Commands
+/// read the old rectangle before copying the patch back. Shared/cached canvases and unusual
+/// placements use the immutable full-frame path.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn warp_in_place(
+    e: &mut Enc,
+    dst: &mut GpuImage,
+    src: &GpuImage,
+    m: &Mat3,
+    sampling: Sampling,
+    opacity: f32,
+    seed: u32,
+    levels: Option<f32>,
+) -> bool {
+    if !dst.exclusive() || !m.is_affine() || m.mean_scale() < 0.5 || dst.levels != levels || !opacity.is_finite() {
+        return false;
+    }
+    let Some(inv) = m.inverse() else { return false };
+    let bounds = m.map_rect(&Rect::from_size(src.width as f64, src.height as f64)).inflate(1.0).round_out();
+    let area = bounds.intersect(&Rect::from_size(dst.width as f64, dst.height as f64));
+    if area.is_empty() || opacity <= 0.0 {
+        return true;
+    }
+    if ![area.x0, area.y0, area.x1, area.y1].iter().all(|v| v.is_finite()) {
+        return false;
+    }
+    let (x, y) = (area.x0.max(0.0) as u32, area.y0.max(0.0) as u32);
+    let (w, h) = ((area.x1.min(dst.width as f64) as u32).saturating_sub(x), (area.y1.min(dst.height as f64) as u32).saturating_sub(y));
+    if w == 0 || h == 0 {
+        return true;
+    }
+    // Large layers already use the efficient ordinary pass.
+    if u64::from(w) * u64::from(h) * 2 >= u64::from(dst.width) * u64::from(dst.height) {
+        return false;
+    }
+    let mut p = Params::default();
+    p.u[0] = [mode_id(BlendMode::Normal), sampling_id(sampling), seed, 0];
+    p.u[1] = [x, y, 0, 0];
+    let rows = rows(&inv);
+    p.f[0] = rows[0];
+    p.f[1] = rows[1];
+    p.f[2] = rows[2];
+    p.f[3] = [opacity, 1.0, levels.unwrap_or(0.0), levels.map_or(0.0, |v| 1.0 / v)];
+    p.f[4] = [x as f32, y as f32, (x + w) as f32, (y + h) as f32];
+    let patch = e.scratch(w, h);
+    e.pixels("warp_blend", &p, src, Some(dst), &patch, None);
+    e.copy_into(&patch, dst, x, y);
+    true
+}
+
 /// `Image::blend_from`: blend `src` (same size) onto `dst`, clamping and quantising the result
 /// to `levels` when set (see [`warp_q`]).
 pub fn blend_full(e: &mut Enc, dst: &GpuImage, src: &GpuImage, mode: BlendMode, opacity: f32, seed: u32, levels: Option<f32>) -> GpuImage {

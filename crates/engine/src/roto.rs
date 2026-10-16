@@ -505,6 +505,9 @@ impl Session {
     /// Start propagating (or freezing) Roto Brush `effect` on `layer`. `wait`: block until done
     /// (wasm32 always does). Returns the number of frames.
     pub fn start_roto(&mut self, comp: ItemId, layer: LayerId, effect: Uid, task: RotoTask, dir: Direction, wait: bool) -> Result<usize, String> {
+        if crate::feature_policy::removed_command("roto.propagate") {
+            return Err("This analysis feature has been removed from this fork".into());
+        }
         if self.is_roto_running() {
             if !wait {
                 return Err("a Roto Brush job is already running".into());

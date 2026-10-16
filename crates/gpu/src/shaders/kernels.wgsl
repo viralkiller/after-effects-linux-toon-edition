@@ -16,9 +16,9 @@ fn out_dims() -> vec2<i32> {
 @compute @workgroup_size(16, 16)
 fn warp_blend(@builtin(global_invocation_id) gid: vec3<u32>) {
     let dims = out_dims();
-    let x = i32(gid.x);
-    let y = i32(gid.y);
-    if (x >= dims.x || y >= dims.y) {
+    let x = i32(gid.x + P.u[1].x);
+    let y = i32(gid.y + P.u[1].y);
+    if (gid.x >= u32(dims.x) || gid.y >= u32(dims.y)) {
         return;
     }
     let mode = P.u[0].x;
@@ -33,7 +33,7 @@ fn warp_blend(@builtin(global_invocation_id) gid: vec3<u32>) {
         if ((flags & 2u) != 0u) {
             d = vec4<f32>(0.0);
         }
-        store_q(vec2<i32>(x, y), d, P.f[3].z, P.f[3].w);
+        store_q(vec2<i32>(gid.xy), d, P.f[3].z, P.f[3].w);
         return;
     }
     let r0 = P.f[0];
@@ -52,7 +52,7 @@ fn warp_blend(@builtin(global_invocation_id) gid: vec3<u32>) {
         if (stencil && (flags & 1u) == 0u) {
             d = blend_pixel(mode, d, vec4<f32>(0.0), 0.5);
         }
-        store_q(vec2<i32>(x, y), d, P.f[3].z, P.f[3].w);
+        store_q(vec2<i32>(gid.xy), d, P.f[3].z, P.f[3].w);
         return;
     }
     var s = sample(src, sampling, px, py);
@@ -60,11 +60,11 @@ fn warp_blend(@builtin(global_invocation_id) gid: vec3<u32>) {
         if (s.w > 0.0) {
             d = d + s * P.f[3].y;
         }
-        store_q(vec2<i32>(x, y), d, P.f[3].z, P.f[3].w);
+        store_q(vec2<i32>(gid.xy), d, P.f[3].z, P.f[3].w);
         return;
     }
     if (s.w <= 0.0 && !stencil) {
-        store_q(vec2<i32>(x, y), d, P.f[3].z, P.f[3].w);
+        store_q(vec2<i32>(gid.xy), d, P.f[3].z, P.f[3].w);
         return;
     }
     let op = P.f[3].x;
@@ -75,7 +75,7 @@ fn warp_blend(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (mode == 1u || mode == 2u) {
         n = hash_noise(u32(x), u32(y), seed);
     }
-    store_q(vec2<i32>(x, y), blend_pixel(mode, d, s, n), P.f[3].z, P.f[3].w);
+    store_q(vec2<i32>(gid.xy), blend_pixel(mode, d, s, n), P.f[3].z, P.f[3].w);
 }
 
 // Blend `src` (same size) onto `aux` (Image::blend_from).
@@ -1013,4 +1013,11 @@ fn fill(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
     textureStore(out, p, P.f[0]);
+}
+
+// Format conversion stays on the GPU; arithmetic remains f32.
+@compute @workgroup_size(16, 16)
+fn copy_pixels(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (any(gid.xy >= textureDimensions(out))) { return; }
+    textureStore(out, vec2<i32>(gid.xy), textureLoad(src, vec2<i32>(gid.xy), 0));
 }

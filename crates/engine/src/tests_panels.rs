@@ -8,7 +8,6 @@ use std::sync::{Arc, Mutex};
 use effectcraft_color::Label;
 use effectcraft_project::{Footage, FootageKind, ItemId, ItemKind, LayerId, LayerSource, build};
 use effectcraft_raster::Image;
-use effectcraft_raster::inpaint::psnr;
 use effectcraft_render::FootageSource;
 use effectcraft_time::{FrameRate, Tick};
 use serde_json::{Value, json};
@@ -120,29 +119,14 @@ fn progress_lists_and_cancels_jobs() {
 // ---------------------------------------------------------------- Media Browser & Metadata
 
 #[test]
-fn media_browser_and_metadata() {
+fn ordinary_import_and_metadata() {
     let dir = tmp("browser");
     std::fs::create_dir_all(dir.join("Footage")).unwrap();
     std::fs::write(dir.join("shot.mov"), b"0123").unwrap();
     std::fs::write(dir.join("data.csv"), "time,v\n0,1\n").unwrap();
     std::fs::write(dir.join("readme.txt"), "x").unwrap();
-    let d = dir.to_string_lossy().to_string();
     let mut s = Session::default();
-    let r = s.execute("mediaBrowser.go", json!({"path": d})).unwrap();
-    let names: Vec<&str> = r["entries"].as_array().unwrap().iter().map(|e| e["name"].as_str().unwrap()).collect();
-    assert_eq!(names, ["Footage", "data.csv", "readme.txt", "shot.mov"]);
-    assert_eq!(s.state.media_browser.folder.as_deref(), Some(d.as_str()));
-    let r = s.execute("mediaBrowser.list", json!({"importableOnly": true})).unwrap();
-    assert_eq!(r["entries"].as_array().unwrap().len(), 3);
-    s.execute("mediaBrowser.addFavorite", json!({})).unwrap();
-    assert_eq!(s.state.media_browser.favorites, vec![d.clone()]);
-    s.execute("mediaBrowser.go", json!({"path": dir.join("Footage").to_string_lossy()})).unwrap();
-    s.execute("mediaBrowser.go", json!({"path": ".."})).unwrap();
-    assert_eq!(s.state.media_browser.folder.as_deref(), Some(d.as_str()));
-    s.execute("mediaBrowser.removeFavorite", json!({"path": d})).unwrap();
-    assert!(s.state.media_browser.favorites.is_empty());
-    // Import a data file from the browser; its metadata reads back.
-    let r = s.execute("mediaBrowser.import", json!({"paths": [dir.join("data.csv").to_string_lossy()]})).unwrap();
+    let r = s.execute("file.import", json!({"paths": [dir.join("data.csv").to_string_lossy()]})).unwrap();
     let id = r["items"][0].as_u64().unwrap();
     let m = s.execute("item.metadata", json!({"item": id})).unwrap();
     assert_eq!(m["item"]["type"], json!("Data"));
@@ -158,9 +142,6 @@ fn media_browser_and_metadata() {
     assert_eq!(m["project"]["comment"], json!("client cut"));
     s.undo();
     assert_eq!(s.project.settings.comment, "");
-    let fi = s.execute("mediaBrowser.fileInfo", json!({"path": dir.join("shot.mov").to_string_lossy()})).unwrap();
-    assert_eq!(fi["size"], json!(4));
-    assert_eq!(fi["kind"], json!("video"));
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -228,163 +209,6 @@ fn footage_panel_overlay_and_ripple_insert() {
     assert_eq!(s.project.comp(cid).unwrap().layers.len(), 2);
     assert!(s.execute("footage.setOut", json!({"time": 0.5})).is_ok());
     assert_eq!(s.state.footage_panel.as_ref().unwrap().in_point, None, "an Out before the In clears the In");
-}
-
-// ---------------------------------------------------------------- Content-Aware Fill
-
-fn bg(x: f32, y: f32) -> [f32; 4] {
-    let s = 0.5 + 0.3 * (x * std::f32::consts::TAU / 10.0).sin();
-    let n = effectcraft_raster::hash_noise(((x.floor() as i64).rem_euclid(20) / 4) as u32, ((y as u32) % 20) / 4, 3);
-    [s, 0.3 + 0.4 * n, 0.6 - 0.3 * s * n, 1.0]
-}
-
-/// Panning textured background with a red "object" walking through the masked region.
-fn caf_frame(f: u32, with_object: bool) -> Image {
-    let (w, h) = (96u32, 64u32);
-    let mut img = Image::new(w, h);
-    for y in 0..h {
-        for x in 0..w {
-            let mut p = bg(x as f32 + 2.0 * f as f32, y as f32);
-            let ox = 40 + (f % 4);
-            if with_object && (ox..ox + 10).contains(&x) && (26..36).contains(&y) {
-                p = [0.9, 0.1, 0.1, 1.0];
-            }
-            img.set(x, y, p);
-        }
-    }
-    img
-}
-
-#[test]
-fn content_aware_fill_removes_an_object() {
-    let (mut s, cid, clip, _) = setup(96, 64, 0.48, |f| caf_frame(f, true));
-    // Cut the object out with a Subtract mask; fill the work area (12 frames).
-    s.execute("layer.addMask", json!({"rect": [36.0, 22.0, 20.0, 18.0], "mode": "subtract"})).unwrap();
-    let out = tmp("caf");
-    s.execute("contentFill.set", json!({"method": "object", "range": "workArea", "alphaExpansion": 1})).unwrap();
-    let r = s.execute("contentFill.generate", json!({"outputDir": out.to_string_lossy(), "wait": true})).unwrap();
-    let fill = LayerId(r["layer"].as_u64().unwrap());
-    let files: Vec<String> = r["files"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_string()).collect();
-    assert_eq!(files.len(), 12);
-    // The Fill layer sits right above the source with the source's timing.
-    let comp = s.project.comp(cid).unwrap();
-    let i = comp.layers.iter().position(|l| l.id == fill).unwrap();
-    assert_eq!(comp.layers[i + 1].id, clip);
-    let fl = comp.layer(fill).unwrap();
-    assert_eq!((fl.in_point, fl.out_point.seconds()), (Tick::ZERO, 0.48));
-    let LayerSource::Footage { item } = fl.source else { panic!("footage") };
-    let Some(ItemKind::Footage(f)) = s.project.item(item).map(|i| &i.kind) else { panic!() };
-    assert_eq!((f.kind, f.sequence.len()), (FootageKind::Sequence, 12));
-    assert!(s.project.item(item).unwrap().name.starts_with("Fill 1"));
-    // The filled frames match the clean background inside the mask, and stay steady over time.
-    let region: Vec<bool> = (0..96 * 64).map(|i| (36..56).contains(&(i % 96)) && (22..40).contains(&(i / 96))).collect();
-    let mut prev: Option<Image> = None;
-    for (k, path) in files.iter().enumerate() {
-        let png = image::open(path).unwrap().to_rgba8();
-        let img = Image::from_rgba8(96, 64, png.as_raw());
-        let truth = caf_frame(k as u32, false);
-        let db = psnr(&img, &truth, Some(&region));
-        assert!(db > 25.0, "frame {k}: {db:.1} dB");
-        // Outside the hole the frame is the source itself.
-        let outside: Vec<bool> = region.iter().map(|r| !r).collect();
-        assert!(psnr(&img, &caf_frame(k as u32, true), Some(&outside)) > 40.0);
-        if let Some(p) = &prev {
-            // Temporal consistency: the change in the hole follows the 2 px/frame pan (compare
-            // against the previous fill shifted).
-            let mut shifted = p.clone();
-            for y in 0..64 {
-                for x in 0..94 {
-                    shifted.data[y * 96 + x] = p.data[y * 96 + x + 2];
-                }
-            }
-            let inner: Vec<bool> = (0..96 * 64).map(|i| (38..54).contains(&(i % 96)) && (24..38).contains(&(i / 96))).collect();
-            assert!(psnr(&img, &shifted, Some(&inner)) > 24.0, "frame {k} jumps");
-        }
-        prev = Some(img);
-    }
-    // One undo step removes the fill layer.
-    assert!(s.undo());
-    assert!(s.project.comp(cid).unwrap().layer(fill).is_none());
-    std::fs::remove_dir_all(&out).unwrap();
-    // Without a hole there is nothing to fill.
-    let (mut s2, _, _, _) = setup(32, 24, 0.2, |_| Image::filled(32, 24, [0.5, 0.5, 0.5, 1.0]));
-    assert!(s2.execute("contentFill.generate", json!({"wait": true, "outputDir": tmp("caf2").to_string_lossy()})).is_err());
-}
-
-#[test]
-fn content_aware_fill_runs_in_the_background() {
-    let (mut s, _, _, _) = setup(48, 32, 0.2, |f| {
-        let mut img = Image::new(48, 32);
-        for y in 0..32 {
-            for x in 0..48 {
-                img.set(x, y, bg(x as f32 + f as f32, y as f32));
-            }
-        }
-        img
-    });
-    s.execute("layer.addMask", json!({"rect": [20.0, 10.0, 8.0, 8.0], "mode": "subtract"})).unwrap();
-    let out = tmp("cafbg");
-    let r = s.execute("contentFill.generate", json!({"method": "edgeBlend", "outputDir": out.to_string_lossy()})).unwrap();
-    assert!(r["job"].as_str().unwrap().starts_with("task:"));
-    assert_eq!(s.jobs().len(), 1);
-    assert_eq!(s.jobs()[0].kind, "contentFill");
-    s.wait_jobs();
-    let rec = s.job_log.last().unwrap();
-    assert_eq!(rec.status, "done", "{}", rec.message);
-    assert_eq!(rec.result["frames"], json!(5));
-    std::fs::remove_dir_all(&out).unwrap();
-}
-
-/// The browser: Content-Aware Fill goes to a job worker (its files written through the
-/// worker's services), and the page adds the fill layer when the plan comes back.
-#[test]
-fn content_aware_fill_runs_in_a_job_worker() {
-    #[derive(Default)]
-    struct Manual(std::sync::Mutex<Vec<(crate::offload::WorkerRequest, Arc<crate::offload::Inbox>)>>);
-    impl crate::offload::Offload for Manual {
-        fn start(&self, req: crate::offload::WorkerRequest, inbox: Arc<crate::offload::Inbox>) -> std::result::Result<(), String> {
-            self.0.lock().unwrap().push((req, inbox));
-            Ok(())
-        }
-        fn cancel(&self, _: u64) {}
-    }
-    let (mut s, cid, clip, _) = setup(48, 32, 0.2, |f| {
-        let mut img = Image::new(48, 32);
-        for y in 0..32 {
-            for x in 0..48 {
-                img.set(x, y, bg(x as f32 + f as f32, y as f32));
-            }
-        }
-        img
-    });
-    let off = Arc::new(Manual::default());
-    s.offload = Some(off.clone());
-    s.execute("layer.addMask", json!({"rect": [20.0, 10.0, 8.0, 8.0], "mode": "subtract"})).unwrap();
-    let out = tmp("cafworker");
-    let r = s.execute("contentFill.generate", json!({"method": "edgeBlend", "outputDir": out.to_string_lossy()})).unwrap();
-    assert_eq!((r["job"].as_str(), r["worker"].as_bool()), (Some("contentFill"), Some(true)), "{r}");
-    assert!(s.jobs().iter().any(|j| j.id == "contentFill"));
-    let (req, inbox) = off.0.lock().unwrap().pop().unwrap();
-    let back: crate::offload::WorkerRequest = serde_json::from_str(&serde_json::to_string(&req).unwrap()).unwrap();
-    // The worker: the same footage, the default (file system) services.
-    let mut w = Session { footage: s.footage.clone(), ..Default::default() };
-    let post: crate::offload::Post = std::rc::Rc::new(move |r| inbox.push(r));
-    crate::offload::run_request(&mut w, back, &post);
-    s.poll_offload();
-    let comp = s.project.comp(cid).unwrap().clone();
-    let i = comp.layers.iter().position(|l| l.id == clip).unwrap();
-    assert!(i > 0, "a fill layer above the source");
-    let fill = &comp.layers[i - 1];
-    assert!(fill.name.starts_with("Fill 1"), "{}", fill.name);
-    let LayerSource::Footage { item } = fill.source else { panic!("footage") };
-    let Some(ItemKind::Footage(f)) = s.project.item(item).map(|i| &i.kind) else { panic!() };
-    assert_eq!(f.sequence.len(), 5);
-    assert!(f.sequence.iter().all(|p| std::path::Path::new(p).exists()));
-    assert!(s.jobs().is_empty());
-    // One undo step.
-    assert!(s.undo());
-    assert_eq!(s.project.comp(cid).unwrap().layers.len(), comp.layers.len() - 1);
-    std::fs::remove_dir_all(&out).unwrap();
 }
 
 // ---------------------------------------------------------------- Scene Edit Detection
@@ -559,73 +383,13 @@ fn align_video_to_data() {
 fn panels_commands_are_wired() {
     // The Window menu opens real panels now, and the former stubs are enabled.
     let menus = crate::menus::entries();
-    for panel in ["lumetriScopes", "footage", "mediaBrowser", "metadata", "progress", "contentAwareFill"] {
+    for panel in ["lumetriScopes", "footage", "metadata", "progress"] {
         assert!(menus.iter().any(|(_, e)| e.command == "window.panel" && e.params["panel"] == panel), "{panel}");
     }
     assert!(crate::find_command("window.unavailablePanel").is_none());
     let (s, _, _, _) = setup(8, 8, 1.0, |_| Image::filled(8, 8, [0.0; 4]));
-    for id in ["layer.autoTrace", "layer.sceneEditDetection", "layer.alignVideoToData", "layer.newContentAwareFill", "contentFill.generate"] {
+    for id in ["layer.autoTrace", "layer.sceneEditDetection", "layer.alignVideoToData"] {
         assert!(s.is_enabled(id), "{id}");
     }
 }
 
-/// A browser like the web app's: a virtual tree whose files are read on demand.
-#[derive(Default)]
-struct VirtualBrowser {
-    tree: Mutex<crate::media_browser::VirtualTree>,
-    fetched: Mutex<Vec<String>>,
-    actions: Mutex<Vec<String>>,
-}
-
-impl crate::media_browser::Browser for VirtualBrowser {
-    fn home(&self) -> String {
-        "/Browser Storage".into()
-    }
-    fn places(&self) -> Vec<(String, String)> {
-        vec![("Browser Storage".into(), self.home()), ("Shoot".into(), "/Folders/Shoot".into())]
-    }
-    fn list(&self, dir: &str, only: bool) -> Result<Vec<crate::media_browser::Entry>, String> {
-        self.tree.lock().unwrap().list(dir, only)
-    }
-    fn fetch(&self, paths: &[String], _: &Value) -> bool {
-        // Opened folders' files arrive later.
-        let pending: Vec<String> = paths.iter().filter(|p| p.starts_with("/Folders/")).cloned().collect();
-        self.fetched.lock().unwrap().extend(pending.iter().cloned());
-        pending.is_empty()
-    }
-    fn actions(&self) -> Vec<(String, String)> {
-        vec![("openFolder".into(), "Open Folder…".into())]
-    }
-    fn action(&self, id: &str) -> Result<Value, String> {
-        self.actions.lock().unwrap().push(id.into());
-        Ok(json!({"pending": true}))
-    }
-}
-
-#[test]
-fn media_browser_over_a_virtual_tree() {
-    let b = Arc::new(VirtualBrowser::default());
-    {
-        let mut t = b.tree.lock().unwrap();
-        t.add_dir("/Browser Storage");
-        t.add_file("/Folders/Shoot/a.csv", "/Folders/Shoot/a.csv", 12, Some(1));
-    }
-    let mut s = Session { browser: Some(b.clone()), ..Default::default() };
-    let r = s.execute("mediaBrowser.list", json!({})).unwrap();
-    assert_eq!(r["path"], "/Browser Storage");
-    assert_eq!(r["places"][1]["path"], "/Folders/Shoot");
-    assert_eq!(r["actions"][0]["id"], "openFolder");
-    let r = s.execute("mediaBrowser.go", json!({"path": "/Folders/Shoot"})).unwrap();
-    assert_eq!(r["entries"][0]["name"], "a.csv");
-    assert_eq!(r["parent"], "/Folders");
-    assert!(s.execute("mediaBrowser.go", json!({"path": "/Nope"})).is_err());
-    // Importing a file that is not read yet: pending (the host imports it once it arrives).
-    let r = s.execute("mediaBrowser.import", json!({"paths": ["/Folders/Shoot/a.csv"]})).unwrap();
-    assert_eq!(r["pending"], true);
-    assert_eq!(*b.fetched.lock().unwrap(), ["/Folders/Shoot/a.csv"]);
-    assert!(s.project.items.values().all(|i| !matches!(i.kind, ItemKind::Footage(_))));
-    let r = s.execute("mediaBrowser.action", json!({"action": "openFolder"})).unwrap();
-    assert_eq!(r["pending"], true);
-    assert_eq!(*b.actions.lock().unwrap(), ["openFolder"]);
-    assert!(s.execute("mediaBrowser.action", json!({})).is_err());
-}

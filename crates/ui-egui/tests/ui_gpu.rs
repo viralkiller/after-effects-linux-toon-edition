@@ -51,7 +51,7 @@ fn viewer_draws_gpu_frames_that_match_the_cpu() {
     let gl = adapter.ends_with("(Gl)");
     drop(probe);
     let mut s = Session::default();
-    s.execute("file.openDemoProject", json!({})).unwrap();
+    effectcraft_engine::commands::open_demo_fixture(&mut s).unwrap();
     s.execute("time.set", json!({"time": 2.0})).unwrap();
     let mut h = Harness::builder()
         .with_size(egui::vec2(1400.0, 900.0))

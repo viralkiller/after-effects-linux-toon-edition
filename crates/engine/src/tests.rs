@@ -4,7 +4,7 @@ use crate::Session;
 
 fn demo() -> Session {
     let mut s = Session::default();
-    s.execute("file.openDemoProject", json!({})).unwrap();
+    crate::commands::open_demo_fixture(&mut s).unwrap();
     s
 }
 
@@ -323,15 +323,6 @@ fn save_and_open_roundtrip() {
     s2.execute("file.open", json!({"path": path})).unwrap();
     assert_eq!(*before, *s2.project);
     let _ = std::fs::remove_dir_all(dir);
-}
-
-#[test]
-fn help_links_emit_urls() {
-    let mut s = Session::default();
-    let r = s.execute("help.discord", json!({})).unwrap();
-    assert_eq!(r["url"], "https://discord.gg/artcraft");
-    assert!(s.drain_events().iter().any(|e| matches!(e, crate::Event::OpenUrl(u) if u.contains("discord"))));
-    assert_eq!(s.execute("help.github", json!({})).unwrap()["url"], "https://github.com/storytold/effectcraft");
 }
 
 #[test]

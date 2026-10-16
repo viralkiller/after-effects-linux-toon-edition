@@ -96,7 +96,7 @@ fn main() {
     };
     let mut session = effectcraft_host::session();
     if args.demo {
-        let _ = session.execute("file.openDemoProject", json!({}));
+        let _ = effectcraft_engine::commands::open_demo_fixture(&mut session);
     }
     let (tx, rx) = mpsc::channel::<ControlRequest>();
     let mut harness = Harness::builder()

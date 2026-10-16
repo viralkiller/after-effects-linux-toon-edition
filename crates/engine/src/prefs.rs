@@ -1336,28 +1336,6 @@ pub fn pages() -> Vec<Page> {
                 Note("Expressions use the JavaScript engine. Script errors report their file and line in the Script Console; there is no step debugger."),
             ],
         },
-        Page {
-            id: "roto",
-            title: "Roto Brush",
-            items: vec![
-                Section("Segmentation Model"),
-                Note(
-                    "Roto Brush 2.0 and 3.0 use the model chosen here (Version 1.0 always uses the classic engine). Models are open source, downloaded only when you ask, and checked against their published SHA-256.",
-                ),
-                Models(effectcraft_segment::Task::Mask),
-            ],
-        },
-        Page {
-            id: "face",
-            title: "Face Tracking",
-            items: vec![
-                Section("Face Model"),
-                Note(
-                    "Face tracking in the Tracker panel (Outline Only and Detailed Features) uses the model chosen here. Models are open source, downloaded only when you ask, and checked against their published SHA-256.",
-                ),
-                Models(effectcraft_segment::Task::Face),
-            ],
-        },
     ]
 }
 

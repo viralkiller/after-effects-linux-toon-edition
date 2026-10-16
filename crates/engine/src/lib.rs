@@ -15,12 +15,12 @@ pub mod camera_track;
 pub mod commands;
 pub mod config;
 pub mod demo;
+pub mod feature_policy;
 pub mod footage_check;
 pub mod footage_reload;
 pub mod guard;
 pub mod history;
 pub mod jobs;
-pub mod learn;
 pub mod links;
 pub mod logging;
 pub mod mask_track;
@@ -468,8 +468,6 @@ pub struct Session {
     /// Finished tasks, newest last (Progress panel, `jobs.list`).
     pub job_log: Vec<jobs::JobRecord>,
     pub next_task_id: u64,
-    /// The running Learn tutorial (Home ▸ Learn), see [`learn`].
-    pub learn: Option<learn::Progress>,
     /// Check footage in the background after File ▸ Open ([`footage_check`]): frontends with an
     /// event loop (the desktop app) turn this on; headless sessions run `footage.check` when
     /// they want it.
@@ -571,7 +569,6 @@ impl Default for Session {
             tasks: vec![],
             job_log: vec![],
             next_task_id: 1,
-            learn: None,
             check_footage_on_open: false,
             footage_stamps: Default::default(),
             footage_scan: None,
@@ -587,6 +584,9 @@ impl Session {
 
     /// Run a command by id.
     pub fn execute(&mut self, id: &str, params: Value) -> Result<Value> {
+        if feature_policy::removed_command(id) {
+            return Err(EngineError::Other(format!("`{id}` has been removed from this fork")));
+        }
         let spec = commands::find(id).ok_or_else(|| EngineError::UnknownCommand(id.to_string()))?;
         if let Err(why) = (spec.enabled)(self) {
             // Explicit targets (agents, scripts) don't need a UI selection.
@@ -600,7 +600,6 @@ impl Session {
         }
         // Last-resort guard: a panicking command reports an error instead of crashing the app.
         let r = guard::guarded(&format!("command `{id}`"), || (spec.run)(self, &params))?;
-        self.learn_observe(id, &params);
         if spec.journal {
             self.journal.push((id.to_string(), params));
             if self.journal.len() > 10_000 {
@@ -613,6 +612,9 @@ impl Session {
     /// [`Session::execute`] for agents and scripts (MCP, CLI, control channel): unknown top-level
     /// parameters are rejected with the accepted keys instead of being silently ignored.
     pub fn execute_checked(&mut self, id: &str, params: Value) -> Result<Value> {
+        if feature_policy::removed_command(id) {
+            return Err(EngineError::Other(format!("`{id}` has been removed from this fork")));
+        }
         let spec = commands::find(id).ok_or_else(|| EngineError::UnknownCommand(id.to_string()))?;
         commands::check_params(spec, &params)?;
         self.execute(id, params)
@@ -644,26 +646,34 @@ impl Session {
         let mut p = (*self.project).clone();
         let mut st = self.state.clone();
         let r = f(&mut p, &mut st)?;
+        let legacy_before = feature_policy::legacy_instances(&before);
+        if feature_policy::legacy_instances(&p).iter().any(|id| !legacy_before.contains(id)) {
+            return Err(EngineError::Other("This edit introduces a removed effect".into()));
+        }
         // Layer styles: one Global Light per comp, whichever layer edited it.
         effectcraft_project::styles::sync_global_light(&before, &mut p);
         // Essential Properties of precomp layers follow their comps' Essential Graphics.
         effectcraft_project::essential::sync_project(&before, &mut p);
-        // Warp Stabilizer analyses made from other frames are cleared (and queued again).
-        for w in warp::invalidate(&before, &mut p) {
-            if !self.warp_pending.contains(&w) {
-                self.warp_pending.push(w);
+        if !feature_policy::removed_command("track.warpStabilizer") {
+            // Warp Stabilizer analyses made from other frames are cleared (and queued again).
+            for w in warp::invalidate(&before, &mut p) {
+                if !self.warp_pending.contains(&w) {
+                    self.warp_pending.push(w);
+                }
             }
         }
-        // So are 3D Camera Tracker tracks (and solves made with other settings).
-        for w in camera_track::invalidate(&before, &mut p) {
-            if !self.camera_pending.contains(&w) {
-                self.camera_pending.push(w);
+        if !feature_policy::removed_command("track.camera") {
+            // So are 3D Camera Tracker tracks (and solves made with other settings).
+            for w in camera_track::invalidate(&before, &mut p) {
+                if !self.camera_pending.contains(&w) {
+                    self.camera_pending.push(w);
+                }
             }
-        }
-        // Roto Brush Input Keys follow the frames; edited instances propagate again.
-        for r in roto::sync(&before, &mut p) {
-            if !self.roto_pending.contains(&r) {
-                self.roto_pending.push(r);
+            // Roto Brush Input Keys follow the frames; edited instances propagate again.
+            for r in roto::sync(&before, &mut p) {
+                if !self.roto_pending.contains(&r) {
+                    self.roto_pending.push(r);
+                }
             }
         }
         // Nothing changed (a value set to what it already was): no undo step, not modified.
@@ -982,12 +992,16 @@ impl Session {
         self.drop_tasks();
         p.fix_next_id();
         upgrade_effects(&mut p);
+        let legacy_features = feature_policy::project_uses_legacy_features(&p);
         self.project = Arc::new(p);
         self.history = History::default();
         self.state = EditorState { snapping: true, view_layout: 1, ..Default::default() };
         self.path = path;
         self.bump();
         self.mark_saved();
+        if legacy_features {
+            self.toast("This project contains retired tracking, Roto Brush or VR effects. Existing data is preserved for compatibility; these tools cannot be created or re-analyzed in this fork.");
+        }
         let first = self.project.comps().next().map(|(id, _)| *id);
         if let Some(c) = first {
             self.open_comp(c);
@@ -1048,8 +1062,6 @@ mod tests_3d;
 #[cfg(test)]
 mod tests_anim_tools;
 #[cfg(test)]
-mod tests_camera_track;
-#[cfg(test)]
 mod tests_codec_options;
 #[cfg(test)]
 mod tests_color_view;
@@ -1061,8 +1073,6 @@ mod tests_effects;
 mod tests_essential;
 #[cfg(test)]
 mod tests_essential_more;
-#[cfg(test)]
-mod tests_face;
 #[cfg(test)]
 mod tests_fidelity;
 #[cfg(test)]
@@ -1079,8 +1089,6 @@ mod tests_m137;
 mod tests_m145;
 #[cfg(test)]
 mod tests_markers;
-#[cfg(test)]
-mod tests_mask_warp;
 #[cfg(test)]
 mod tests_menu_cmds;
 #[cfg(test)]
@@ -1111,8 +1119,6 @@ mod tests_text_edit;
 mod tests_timeline;
 #[cfg(test)]
 mod tests_timeline_interchange;
-#[cfg(test)]
-mod tests_track;
 #[cfg(test)]
 mod tests_vector_import;
 #[cfg(test)]
@@ -1208,13 +1214,9 @@ pub fn font_menu(prefs: &prefs::Prefs) -> Vec<FontRow> {
 #[cfg(test)]
 mod tests_history;
 #[cfg(test)]
-mod tests_models;
-#[cfg(test)]
 mod tests_paint;
 #[cfg(test)]
 mod tests_panels;
-#[cfg(test)]
-mod tests_roto;
 
 #[cfg(test)]
 mod tests_key_time;

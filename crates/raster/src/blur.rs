@@ -11,26 +11,26 @@ use crate::{Image, Px};
 
 /// One horizontal box pass of radius `r` (window 2r+1) over each row of `src` (width `w`) into
 /// `out`; `repeat` = edge pixels extend, otherwise transparent.
-fn box_h_into(src: &[Px], out: &mut [Px], w: usize, r: usize, repeat: bool) {
+fn box_h_into<const N: usize>(src: &[[f32; N]], out: &mut [[f32; N]], w: usize, r: usize, repeat: bool) {
     if r == 0 {
         out.copy_from_slice(src);
         return;
     }
     let norm = 1.0 / (2 * r + 1) as f32;
     out.par_chunks_mut(w).zip(src.par_chunks(w)).for_each(|(o, row)| {
-        let get = |i: isize| -> Px {
+        let get = |i: isize| -> [f32; N] {
             if i < 0 {
-                if repeat { row[0] } else { [0.0; 4] }
+                if repeat { row[0] } else { [0.0; N] }
             } else if i as usize >= w {
-                if repeat { row[w - 1] } else { [0.0; 4] }
+                if repeat { row[w - 1] } else { [0.0; N] }
             } else {
                 row[i as usize]
             }
         };
-        let mut acc = [0.0f32; 4];
+        let mut acc = [0.0f32; N];
         for i in -(r as isize)..=(r as isize) {
             let p = get(i);
-            for c in 0..4 {
+            for c in 0..N {
                 acc[c] += p[c];
             }
         }
@@ -38,7 +38,7 @@ fn box_h_into(src: &[Px], out: &mut [Px], w: usize, r: usize, repeat: bool) {
             o[x] = acc.map(|v| v * norm);
             let add = get(x as isize + r as isize + 1);
             let sub = get(x as isize - r as isize);
-            for c in 0..4 {
+            for c in 0..N {
                 acc[c] += add[c] - sub[c];
             }
         }
@@ -46,14 +46,14 @@ fn box_h_into(src: &[Px], out: &mut [Px], w: usize, r: usize, repeat: bool) {
 }
 
 /// One vertical box pass (same semantics as [`box_h_into`] along columns).
-fn box_v_into(src: &[Px], out: &mut [Px], w: usize, h: usize, r: usize, repeat: bool) {
+fn box_v_into<const N: usize>(src: &[[f32; N]], out: &mut [[f32; N]], w: usize, h: usize, r: usize, repeat: bool) {
     if r == 0 {
         out.copy_from_slice(src);
         return;
     }
     let norm = 1.0 / (2 * r + 1) as f32;
     let block = (4 * r).clamp(32, 256);
-    let row = |i: isize| -> Option<&[Px]> {
+    let row = |i: isize| -> Option<&[[f32; N]]> {
         if i < 0 {
             repeat.then(|| &src[0..w])
         } else if i as usize >= h {
@@ -64,11 +64,11 @@ fn box_v_into(src: &[Px], out: &mut [Px], w: usize, h: usize, r: usize, repeat: 
     };
     out.par_chunks_mut(w * block).enumerate().for_each(|(bi, chunk)| {
         let ya = (bi * block) as isize;
-        let mut acc = vec![[0.0f32; 4]; w];
+        let mut acc = vec![[0.0f32; N]; w];
         for i in ya - r as isize..=ya + r as isize {
             if let Some(rw) = row(i) {
                 for (a, p) in acc.iter_mut().zip(rw) {
-                    for c in 0..4 {
+                    for c in 0..N {
                         a[c] += p[c];
                     }
                 }
@@ -82,21 +82,21 @@ fn box_v_into(src: &[Px], out: &mut [Px], w: usize, h: usize, r: usize, repeat: 
             match (row(y + r as isize + 1), row(y - r as isize)) {
                 (Some(add), Some(sub)) => {
                     for ((a, p), q) in acc.iter_mut().zip(add).zip(sub) {
-                        for c in 0..4 {
+                        for c in 0..N {
                             a[c] += p[c] - q[c];
                         }
                     }
                 }
                 (Some(add), None) => {
                     for (a, p) in acc.iter_mut().zip(add) {
-                        for c in 0..4 {
+                        for c in 0..N {
                             a[c] += p[c];
                         }
                     }
                 }
                 (None, Some(sub)) => {
                     for (a, q) in acc.iter_mut().zip(sub) {
-                        for c in 0..4 {
+                        for c in 0..N {
                             a[c] -= q[c];
                         }
                     }
@@ -155,6 +155,43 @@ pub fn gaussian_blur(img: &Image, sigma_x: f64, sigma_y: f64, repeat: bool) -> I
     let rx = if sigma_x > 0.05 { box_radii(sigma_x, 3) } else { vec![] };
     let ry = if sigma_y > 0.05 { box_radii(sigma_y, 3) } else { vec![] };
     box_passes(img, &rx, &ry, repeat)
+}
+
+/// Feather a single-channel mask without constructing RGBA images. Uses the same FP32
+/// running sums, edge rules, pass order, and Gaussian radii as the colour-image blur.
+fn mask_passes(mask: &crate::Mask, rx: &[usize], ry: &[usize], repeat: bool) -> crate::Mask {
+    let (w, h) = (mask.width as usize, mask.height as usize);
+    if w == 0 || h == 0 || w.checked_mul(h) != Some(mask.data.len()) {
+        return mask.clone();
+    }
+    let passes: Vec<_> = rx.iter().map(|&r| (false, r)).chain(ry.iter().map(|&r| (true, r))).filter(|p| p.1 > 0).collect();
+    if passes.is_empty() {
+        return mask.clone();
+    }
+    let mut a = crate::Mask::new(mask.width, mask.height, 0.0);
+    let mut b = crate::Mask::new(mask.width, mask.height, 0.0);
+    for (i, &(vertical, radius)) in passes.iter().enumerate() {
+        let src = if i == 0 { &mask.data } else { &a.data };
+        let src = src.as_slice().as_chunks::<1>().0;
+        let dst = b.data.as_mut_slice().as_chunks_mut::<1>().0;
+        if vertical {
+            box_v_into(src, dst, w, h, radius, repeat);
+        } else {
+            box_h_into(src, dst, w, radius, repeat);
+        }
+        std::mem::swap(&mut a, &mut b);
+    }
+    a
+}
+
+pub fn mask_box_blur(mask: &crate::Mask, rx: usize, ry: usize, repeat: bool) -> crate::Mask {
+    mask_passes(mask, &[rx], &[ry], repeat)
+}
+
+pub fn mask_gaussian_blur(mask: &crate::Mask, sx: f64, sy: f64, repeat: bool) -> crate::Mask {
+    let rx = if sx > 0.05 { box_radii(sx, 3) } else { vec![] };
+    let ry = if sy > 0.05 { box_radii(sy, 3) } else { vec![] };
+    mask_passes(mask, &rx, &ry, repeat)
 }
 
 /// Motion blur along `angle_deg` (0 = vertical in AE's Directional Blur, measured clockwise from
@@ -288,5 +325,32 @@ mod tests {
         let r = box_radii(10.0, 3);
         assert_eq!(r.len(), 3);
         assert!(r.iter().all(|&v| (7..=10).contains(&v)), "{r:?}");
+    }
+}
+
+#[cfg(test)]
+mod mask_optimization_tests {
+    use super::*;
+    #[test]
+    fn scalar_feather_matches_rgba_reference() {
+        for (w, h) in [(1, 1), (1, 19), (31, 1), (23, 79)] {
+            let mut m = crate::Mask::new(w, h, 0.0);
+            for (i, a) in m.data.iter_mut().enumerate() {
+                *a = ((i * 17) % 251) as f32 / 250.0;
+            }
+            for repeat in [false, true] {
+                for (x, y) in [(0, 0), (1, 3), (37, 2), (2, 83)] {
+                    assert_eq!(mask_box_blur(&m, x, y, repeat), crate::Mask::from_alpha(&box_blur(&m.to_image(), x, y, 1, repeat)));
+                }
+                for (x, y) in [(0.0, 0.0), (0.04, 3.0), (3.5, 1.2), (32.0, 16.0)] {
+                    assert_eq!(mask_gaussian_blur(&m, x, y, repeat), crate::Mask::from_alpha(&gaussian_blur(&m.to_image(), x, y, repeat)));
+                }
+            }
+        }
+    }
+    #[test]
+    fn scalar_feather_accepts_empty_masks() {
+        let m = crate::Mask::default();
+        assert_eq!(mask_gaussian_blur(&m, 3.0, 2.0, false), m);
     }
 }

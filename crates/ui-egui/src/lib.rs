@@ -361,6 +361,16 @@ impl EffectcraftApp {
     pub fn new(session: Session) -> Self {
         let mut ui = UiState::default();
         let workspace_store = workspace_state::WorkspaceStore::load(session.config.as_deref(), &mut ui);
+        workspace_state::remove_retired_panels(&mut ui);
+        if ui.workspace == "Learn" {
+            ui.workspace = "Default".into();
+            ui.dock = dock::workspace("Default");
+            ui.start_screen = false;
+        }
+        if ui.tool.roto_kind(false).is_some() {
+            ui.tool = state::Tool::Selection;
+        }
+        ui.slot_tools = state::Tool::SLOTS.iter().map(|slot| ui.slot_tools.iter().copied().find(|tool| slot.contains(tool)).unwrap_or(slot[0])).collect();
         EffectcraftApp {
             session,
             ui,
@@ -468,7 +478,13 @@ impl EffectcraftApp {
         ctx.set_zoom_factor(p.appearance.ui_scale as f32 / 100.0);
         self.ui.cache_when_idle = p.previews.cache_frames_when_idle;
         self.ui.viewer.fast_preview = p.previews.fast_previews;
-        self.frames.set_budget(p.cache_budgets(self.session.sys_memory).preview);
+        let preview = p.cache_budgets(self.session.sys_memory).preview;
+        if let Some(gpu) = &self.gpu {
+            gpu.context().set_memory_budget(preview / 2);
+            self.frames.set_budget(preview - preview / 2);
+        } else {
+            self.frames.set_budget(preview);
+        }
     }
 
     /// Change settings from the UI (applied next frame and saved).
@@ -514,20 +530,12 @@ impl EffectcraftApp {
     }
 
     pub fn set_workspace(&mut self, name: &str) {
-        // Learn: the Home screen's Learn tab (tutorials) in the Composition panel. Leaving it for
-        // another workspace closes the Home screen again: it stayed over every workspace until a
-        // project was created (#272).
-        if name == "Learn" {
-            self.ui.start_screen = true;
-            self.ui.home_learn = true;
-            self.ui.home_templates = false;
-        } else if self.ui.workspace == "Learn" {
-            self.ui.start_screen = false;
-            self.ui.home_learn = false;
-        }
+        // Migrate the retired built-in workspace without discarding other layouts.
+        let name = if matches!(name, "Learn" | "Motion Tracking") { "Default" } else { name };
         self.ui.workspace = name.to_string();
         self.ui.dock = self.ui.saved_workspaces.get(name).cloned().unwrap_or_else(|| dock::workspace(name));
         self.ui.floating = self.ui.saved_floating.get(name).cloned().unwrap_or_else(|| dock::workspace_floating(name));
+        workspace_state::remove_retired_panels(&mut self.ui);
         self.ui.maximized = None;
     }
 
@@ -541,12 +549,20 @@ impl EffectcraftApp {
     /// The workspaces the user saved under a new name (built-ins whose changes were saved are
     /// not repeated), in name order.
     pub fn saved_workspace_names(&self) -> Vec<String> {
-        self.ui.saved_workspaces.keys().filter(|k| !dock::WORKSPACES.contains(&k.as_str())).cloned().collect()
+        self.ui
+            .saved_workspaces
+            .keys()
+            .filter(|k| !matches!(k.as_str(), "Learn" | "Motion Tracking") && !dock::WORKSPACES.contains(&k.as_str()))
+            .cloned()
+            .collect()
     }
 
     /// Show panel `p` (opening it in its usual place if it is closed), bring it to the front and
     /// give it the focus: Window ▸ <panel>.
     pub fn show_panel(&mut self, p: PanelKind) {
+        if p.retired() {
+            return;
+        }
         if !self.ui.floating.iter().any(|f| f.panels.contains(&p)) && self.ui.maximized.is_some_and(|m| m != p) {
             self.ui.maximized = None;
         }
@@ -558,6 +574,9 @@ impl EffectcraftApp {
     /// without moving the focus (a comp opening brings up its viewer, an effect applied brings up
     /// Effect Controls).
     pub fn raise_panel(&mut self, p: PanelKind) {
+        if p.retired() {
+            return;
+        }
         if self.ui.floating.iter().any(|group| group.panels.contains(&p)) {
             self.edit_layout(|layout| layout.apply(craft_ui::docking::Action::Activate { panel: p }).is_ok());
             return;
@@ -743,6 +762,7 @@ impl EffectcraftApp {
                 log::info!("GPU compositor: {}", effectcraft_engine::render::Accelerator::name(&g));
                 self.session.accel = Some(Arc::new(g.clone()));
                 self.gpu = Some(g);
+                self.applied_prefs = None;
                 self.wgpu = Some(rs.clone());
             }
             Ok(Err(e)) => {
@@ -1575,14 +1595,10 @@ impl EffectcraftApp {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
         // Warp Stabilizer: finish analyses and start queued (re-)analyses in the background.
-        if self.session.warp_job.is_some() || !self.session.warp_pending.is_empty() {
+        if !effectcraft_engine::feature_policy::removed_command("track.warpStabilizer")
+            && (self.session.warp_job.is_some() || !self.session.warp_pending.is_empty())
+        {
             self.session.poll_warp(true);
-            self.session.poll_roto(true);
-            ctx.request_repaint_after(std::time::Duration::from_millis(100));
-        }
-        // 3D Camera Tracker: likewise (tracking, then solving).
-        if self.session.camera_job.is_some() || !self.session.camera_pending.is_empty() {
-            self.session.poll_camera(true);
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
         self.apply_prefs(&ctx);
@@ -1637,7 +1653,6 @@ impl EffectcraftApp {
         panels::dialogs::show(self, &ctx);
         panels::scriptui_view::sync_panels(self);
         panels::scriptui_view::show_windows(self, &ctx);
-        panels::learn::coach(self, &ctx);
         let lift = panels::media_panels::import_card(self, ui, full);
         self.draw_toast(ui, full, lift);
         if self.session.config.is_some() && self.workspace_store.has_changes(&self.ui) && !ctx.input(|i| i.pointer.any_down()) {

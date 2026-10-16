@@ -20,8 +20,8 @@ pub(super) fn validate(cmd: &str, args: &Args) -> Result<(), Failure> {
     if !matches!(cmd, "render" | "render-frame" | "frame") {
         return usage_err("--template is available for render and render-frame");
     }
-    if args.project.is_some() || args.flag("--demo") || args.opt("--bridge").is_some() || args.flag("--queue") || args.opt("--comp").is_some() {
-        return usage_err("--template renders a new instance; it cannot be combined with --project, --demo, --bridge, --queue or --comp");
+    if args.project.is_some() || args.opt("--bridge").is_some() || args.flag("--queue") || args.opt("--comp").is_some() {
+        return usage_err("--template renders a new instance; it cannot be combined with --project, --bridge, --queue or --comp");
     }
     if !args.pos.is_empty() {
         return usage_err("template rendering takes --template FILE.ectemplate, without positional arguments");

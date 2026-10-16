@@ -171,7 +171,7 @@ fn describe(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// What this build can do: counts agents use to orient themselves, and the parity summary.
 fn capabilities(s: &mut Session, _: &Value) -> Result<Value> {
-    let fx = effectcraft_effects::registry();
+    let fx = effectcraft_effects::all();
     let formats: Vec<Value> = s.exporter.as_ref().map(|e| e.formats().iter().map(|f| json!(format!("{f:?}"))).collect()).unwrap_or_default();
     Ok(json!({
         "version": env!("CARGO_PKG_VERSION"),

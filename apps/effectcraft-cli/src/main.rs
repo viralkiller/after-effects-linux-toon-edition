@@ -26,7 +26,7 @@
 //! effectcraft-cli script FILE.jsx [F.ecproj] | --eval CODE    run an After Effects-style script
 //! effectcraft-cli mcp [--autosave | --bridge PORT]            MCP server on stdio
 //!
-//! Project:  --project F.ecproj (or a positional *.ecproj) | --demo | --empty   (default: demo; mcp: empty)
+//! Project:  --project F.ecproj (or a positional *.ecproj) | --empty   (default: empty)
 //! Saving:   --save (back to --project) | --save-as F.ecproj
 //! GPU:      --gpu renders on the GPU compositor (Mercury GPU Acceleration) when an adapter exists;
 //!           the default is the CPU (Mercury Software Only)
@@ -120,7 +120,7 @@ const USAGE: &str = "usage: effectcraft-cli <info|commands|exec|run|props|get|se
       [--automation-read-root DIR] [--automation-write-root DIR]
                                            confine the agent's file access: reads under a read or write root,
                                            writes under a write root (each repeatable); scripts are refused
-options: --project F.ecproj | --demo | --empty   --save | --save-as F   --bridge PORT   --json   --gpu
+options: --project F.ecproj | --empty   --save | --save-as F   --bridge PORT   --json   --gpu
 <comp>: id or name, '-' = active comp; <layer>: id, '#n' or name; <value>: JSON or bare string";
 
 /// Options that take a value.
@@ -175,7 +175,6 @@ const VALUED: &[&str] = &[
 const FLAGS: &[&str] = &[
     "--json",
     "--save",
-    "--demo",
     "--empty",
     "--gpu",
     "--list",
@@ -321,9 +320,9 @@ fn usage_err<T>(m: &str) -> Result<T, Failure> {
 }
 
 /// Build the backend: a bridge to the app, or a headless session with the requested project.
-fn backend(args: &Args, default_demo: bool) -> Result<Backend, Failure> {
+fn backend(args: &Args, _default_demo: bool) -> Result<Backend, Failure> {
     if let Some(addr) = args.opt("--bridge") {
-        if args.project.is_some() || args.flag("--demo") {
+        if args.project.is_some() {
             return usage_err("--bridge drives the running app's project; use `exec file.open` to open another");
         }
         return Ok(Backend::bridge(addr)?);
@@ -331,8 +330,6 @@ fn backend(args: &Args, default_demo: bool) -> Result<Backend, Failure> {
     let mut b = Backend::headless(session(args)?);
     if let Some(p) = &args.project {
         b.exec("file.open", json!({"path": p}))?;
-    } else if args.flag("--demo") || (default_demo && !args.flag("--empty")) {
-        b.exec("file.openDemoProject", json!({}))?;
     }
     Ok(b)
 }
@@ -381,7 +378,7 @@ fn tool(b: &mut Backend, name: &str, a: Value) -> Result<Value, Failure> {
 }
 
 /// `script FILE.jsx [project]` / `script --eval CODE`: run JavaScript against a headless session
-/// (an empty project unless one is given, or `--demo`) or the running app (`--bridge`).
+/// (an empty project unless one is given) or the running app (`--bridge`).
 fn script_cmd(args: &Args, json_out: bool) -> Result<(), Failure> {
     let (code, name) = match (args.opt("--eval"), args.pos.first()) {
         (Some(c), _) => (c.to_string(), "eval".to_string()),
@@ -663,7 +660,7 @@ fn render(args: &Args, json_out: bool) -> Result<(), Failure> {
     } else {
         match &args.project {
             Some(p) => s.execute("file.open", json!({"path": p})).map_err(|e| Failure::Error(e.to_string()))?,
-            None => s.execute("file.openDemoProject", json!({})).map_err(|e| Failure::Error(e.to_string()))?,
+            None => return usage_err("render requires --project FILE"),
         };
     }
     let err = |e: effectcraft_engine::EngineError| Failure::Error(e.to_string());
@@ -815,7 +812,7 @@ fn bench_cmd(args: &Args) -> Result<(), Failure> {
     let mut s = effectcraft_host::session();
     match &args.project {
         Some(p) => s.execute("file.open", json!({"path": p})),
-        None => s.execute("file.openDemoProject", json!({})),
+        None => effectcraft_engine::commands::open_demo_fixture(&mut s),
     }
     .map_err(|e| Failure::Error(e.to_string()))?;
     if let Some(c) = args.opt("--comp") {

@@ -32,7 +32,7 @@ pub(crate) fn render<'g>(e: &mut Enc<'g>, r: &Renderer, comp_id: ItemId, t: Tick
     if r.depth() > 16 || !e.g.fits(w, h) {
         return None;
     }
-    let mut canvas = e.zeros(w, h);
+    let mut canvas = e.image(w, h);
     draw_comp(e, r, &ctx, &mut canvas)?;
     let pipe = r.pipe();
     if let Some(c) = pipe.from_blend() {
@@ -217,6 +217,9 @@ fn draw_layer(e: &mut Enc, r: &Renderer, ctx: &EvalCtx, layer: &Layer, canvas: &
     if let Some(done) = draw_precomp(e, r, ctx, layer, canvas, opacity) {
         return done;
     }
+    if let Some(done) = draw_resident(e, r, ctx, layer, canvas, opacity) {
+        return done;
+    }
     let Some(st) = r.styled_layer(ctx, layer) else { return Some(()) };
     if st.plain {
         return composite_layer(e, r, ctx, layer, &st.body, canvas, opacity);
@@ -244,6 +247,65 @@ fn draw_layer(e: &mut Enc, r: &Renderer, ctx: &EvalCtx, layer: &Layer, canvas: &
     tmp = place(e, r, ctx, layer, &st.body, &tmp, layer.blend_mode, 1.0, None)?;
     *canvas = ops::channel_mix(e, canvas, &tmp, bl.channels, opacity);
     Some(())
+}
+
+/// Ordinary effects can stay on the GPU. Cache the masked input independently of animated
+/// effects, and retain the processed GPU output when it has a stable content key.
+fn draw_resident(e: &mut Enc, r: &Renderer, ctx: &EvalCtx, layer: &Layer, canvas: &mut GpuImage, opacity: f32) -> Option<Option<()>> {
+    use effectcraft_project::LayerSource;
+    if !matches!(layer.source, LayerSource::Footage { .. } | LayerSource::Solid { .. } | LayerSource::Shape | LayerSource::Text)
+        || styles::active(ctx, layer)
+        || !layer.switches.effects
+        || r.accel.is_none()
+        || r.opts.backend == effectcraft_render::Backend::Cpu
+        || (r.opts.backend == effectcraft_render::Backend::Auto && !r.project.settings.gpu_acceleration)
+        || !layer.effects().is_some_and(|g| g.groups().any(|f| {
+            f.enabled && matches!(&f.kind, effectcraft_project::GroupKind::Effect { effect } if crate::effects::supports(effect) && effectcraft_effects::find(effect).is_some_and(|s| s.gpu))
+        }))
+        || !e.g.can_wait()
+    {
+        return None;
+    }
+    let key = r.processed_key(ctx, layer).map(|k| effectcraft_render::cache::derive(k, u64::from(e.is_half())));
+    let cached = key.and_then(|k| e.g.resident_get(k));
+    let (img, offset, scale) = match cached {
+        Some(v) => v,
+        None => {
+            let b = r.layer_input(ctx, layer, 0)?;
+            let src = e.g.upload_buf(&b)?;
+            let mut fx = crate::effects::GpuFx::new(e, src, b.offset, b.scale, r.pipe().levels);
+            let origin = r.run_layer_effects_on(ctx, layer, &mut fx);
+            let (mut img, off, sc) = fx.finish()?;
+            if let Some(c) = r.pipe().to_blend() {
+                img = ops::convert(e, &img, &c);
+            }
+            let off = [off[0] - origin[0] * sc, off[1] - origin[1] * sc];
+            if let Some(k) = key {
+                // Publish only after submission: another frame may immediately use this texture.
+                e.submit();
+                e.g.resident_put(k, img.clone(), off, sc);
+            }
+            (img, off, sc)
+        }
+    };
+    let shape = Buf { img: Image { width: img.width, height: img.height, data: Vec::new() }, offset, scale };
+    if r.track_matte(ctx, layer).is_some() || layer.preserve_transparency {
+        let iso = place_src(e, r, ctx, layer, &shape, img, &e.zeros(canvas.width, canvas.height), BlendMode::Normal, 1.0, None)?;
+        return Some(composite_iso(e, r, ctx, layer, iso, canvas, opacity));
+    }
+    if place_in_place(e, r, ctx, layer, &shape, &img, canvas, opacity) {
+        return Some(Some(()));
+    }
+    Some(place_src(e, r, ctx, layer, &shape, img, canvas, layer.blend_mode, opacity, r.pipe().levels).map(|v| *canvas = v))
+}
+
+fn place_in_place(e: &mut Enc, r: &Renderer, ctx: &EvalCtx, layer: &Layer, b: &Buf, img: &GpuImage, canvas: &mut GpuImage, opacity: f32) -> bool {
+    if layer.blend_mode != BlendMode::Normal {
+        return false;
+    }
+    let p = r.placement(ctx, layer, b);
+    let [m] = p.matrices.as_slice() else { return false };
+    ops::warp_in_place(e, canvas, img, m, p.sampling, opacity, p.seed, r.pipe().levels)
 }
 
 /// A 2D precomp layer, its nested comp rendered resident on the GPU (`walk::render` one level
@@ -325,6 +387,11 @@ fn draw_adjustment(e: &mut Enc, r: &Renderer, ctx: &EvalCtx, layer: &Layer, canv
 fn composite_layer(e: &mut Enc, r: &Renderer, ctx: &EvalCtx, layer: &Layer, buf: &Arc<Buf>, canvas: &mut GpuImage, opacity: f32) -> Option<()> {
     let matte = r.track_matte(ctx, layer).is_some();
     if !matte && !layer.preserve_transparency {
+        if let Some(img) = e.g.upload_buf(buf)
+            && place_in_place(e, r, ctx, layer, buf, &img, canvas, opacity)
+        {
+            return Some(());
+        }
         // The comp is quantised after the layer (8/16 bpc) in the same pass.
         *canvas = place(e, r, ctx, layer, buf, canvas, layer.blend_mode, opacity, r.pipe().levels)?;
         return Some(());

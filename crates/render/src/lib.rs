@@ -38,6 +38,12 @@ use rayon::prelude::*;
 
 /// Supplies decoded footage frames (implemented by the media layer).
 pub trait FootageSource: Send + Sync {
+    /// Changes whenever source pixels are replaced and distinguishes independent providers
+    /// sharing render caches. None opts out of processed still caching.
+    fn cache_revision(&self) -> Option<u64> {
+        None
+    }
+
     /// The frame of `item` at source time `t`, straight from the file (any size).
     fn frame(&self, item: ItemId, footage: &Footage, t: Tick) -> Option<Arc<Image>>;
     /// [`FootageSource::frame`] for a render that shows it at `width` × `height`, at most half its
@@ -1110,7 +1116,7 @@ impl<'a> Renderer<'a> {
                     && let Some(nc) = self.project.comp(*item)
                 {
                     let img = self.footage.frame(*item, pf, lt)?;
-                    return Some(self.footage_buf(&img, pf, nc.width, nc.height));
+                    return Some(self.footage_buf(img, pf, nc.width, nc.height));
                 }
                 // Essential Properties overrides render the nested comp with this instance's
                 // values.
@@ -1150,7 +1156,7 @@ impl<'a> Renderer<'a> {
                 if layer.switches.collapse && is_vector_footage(f) {
                     let k = self.raster_scale(ctx, layer);
                     if let Some(img) = self.footage.vector_frame(*item, f, k) {
-                        let mut buf = Buf { img: (*img).clone(), offset: [0.0; 2], scale: k };
+                        let mut buf = Buf { img: Arc::unwrap_or_clone(img), offset: [0.0; 2], scale: k };
                         if let Some(c) = self.pipe.media_in(f) {
                             color::convert(&mut buf.img, &c);
                         }
@@ -1163,7 +1169,7 @@ impl<'a> Renderer<'a> {
                 let pf = proxy.unwrap_or(f);
                 let size = self.reduced_size(f.width, f.height).filter(|_| proxy.is_none());
                 let img = self.footage_frame(ctx, layer, *item, pf, lt, size)?;
-                Some(self.footage_buf(&img, pf, f.width, f.height))
+                Some(self.footage_buf(img, pf, f.width, f.height))
             }
             LayerSource::Text => Some(self.authored(text::render(ctx, layer, self.raster_scale(ctx, layer)))),
             LayerSource::Shape => layer.props.sub("contents").map(|c| self.authored(shapes::render(ctx, layer, c, self.raster_scale(ctx, layer)))),
@@ -1180,15 +1186,15 @@ impl<'a> Renderer<'a> {
 
     /// A decoded frame of `f` as a layer buffer covering `w`×`h` layer pixels (the footage's
     /// nominal size; proxies are scaled up to it), converted from its colour profile.
-    fn footage_buf(&self, img: &Image, f: &Footage, w: u32, h: u32) -> Buf {
+    fn footage_buf(&self, img: Arc<Image>, f: &Footage, w: u32, h: u32) -> Buf {
         let s = self.opts.scale;
         let k = if img.width > 0 { w.max(1) as f64 / img.width as f64 } else { 1.0 };
         // Keep native pixels when downsampling is small; resample otherwise.
         let mut buf = match self.reduced_size(w, h) {
             // The source resampled it already (`FootageSource::frame_at_size`).
-            Some(size) if (img.width, img.height) == size => Buf { img: img.clone(), offset: [0.0; 2], scale: s },
-            Some((rw, rh)) if k <= 1.0 + 1e-9 => Buf { img: effectcraft_raster::resample(img, rw, rh), offset: [0.0; 2], scale: s },
-            _ => Buf { img: img.clone(), offset: [0.0; 2], scale: 1.0 / k },
+            Some(size) if (img.width, img.height) == size => Buf { img: Arc::unwrap_or_clone(img), offset: [0.0; 2], scale: s },
+            Some((rw, rh)) if k <= 1.0 + 1e-9 => Buf { img: effectcraft_raster::resample(&img, rw, rh), offset: [0.0; 2], scale: s },
+            _ => Buf { img: Arc::unwrap_or_clone(img), offset: [0.0; 2], scale: 1.0 / k },
         };
         if let Some(c) = self.pipe.media_in(f) {
             color::convert(&mut buf.img, &c);
@@ -1335,14 +1341,22 @@ impl<'a> Renderer<'a> {
         self.source(ctx, layer)
     }
 
+    /// Stable identity of a processed layer, including source reloads and proxy policy.
+    pub fn processed_key(&self, ctx: &EvalCtx, layer: &Layer) -> Option<u64> {
+        if matches!(layer.source, LayerSource::Footage { .. }) && self.footage.cache_revision().is_none() {
+            return None;
+        }
+        let key = cache::layer_key(ctx, layer, self.raster_scale(ctx, layer), self.opts.draft, self.mb_on(ctx, layer));
+        self.content_key(ctx, layer, key)
+    }
+
     /// Layer pixels after source → masks → effects (no layer styles).
     pub fn content_buf(&self, ctx: &EvalCtx, layer: &Layer) -> Option<Arc<Buf>> {
         self.content_buf_timed(ctx, layer, None).map(|(b, _)| b)
     }
 
     fn content_buf_timed(&self, ctx: &EvalCtx, layer: &Layer, mut timing: Option<&mut LayerTiming>) -> Option<(Arc<Buf>, Option<u64>)> {
-        let key = self.cache.and_then(|_| cache::layer_key(ctx, layer, self.raster_scale(ctx, layer), self.opts.draft, self.mb_on(ctx, layer)));
-        let key = self.content_key(ctx, layer, key);
+        let key = self.cache.and_then(|_| self.processed_key(ctx, layer));
         if let (Some(c), Some(k)) = (self.cache, key)
             && let Some(b) = c.get(k)
         {
@@ -1584,7 +1598,15 @@ impl<'a> Renderer<'a> {
     /// A processed-layer cache key that also covers content motion blur (the averaged source
     /// depends on the content at every sub-sample).
     fn content_key(&self, ctx: &EvalCtx, layer: &Layer, key: Option<u64>) -> Option<u64> {
-        let k = key?;
+        let mut k = key?;
+        // Separate proxy policies (viewer versus full-source export) and invalidate selected
+        // source dependencies when the provider reloads a file.
+        k = cache::derive(k, self.opts.proxy as u64);
+        k = cache::derive(k, self.footage.cache_revision().unwrap_or(0));
+        if self.footage.cache_revision().is_none() && cache::static_footage(ctx, layer) {
+            // Preserve time-keyed inputs for providers that have not opted in.
+            k = cache::derive(k, ctx.source_time(layer).0 as u64);
+        }
         let Some(times) = self.content_times(ctx, layer) else { return Some(k) };
         times.iter().try_fold(cache::derive(k, 0x6d62_6c72), |d, t| Some(cache::derive(d, cache::layer_key(&ctx.at(*t), layer, 1.0, false, false)?)))
     }
@@ -2240,3 +2262,6 @@ mod tests_nested;
 mod tests_paint;
 #[cfg(test)]
 mod tests_time;
+
+#[cfg(test)]
+mod tests_2d_optimizations;

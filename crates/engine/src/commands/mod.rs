@@ -19,6 +19,8 @@ mod effect;
 pub mod essential;
 pub mod expr_tools;
 mod file;
+#[doc(hidden)]
+pub use file::open_demo_fixture;
 pub(crate) mod file_more;
 mod focus;
 pub mod footage_panel;
@@ -204,9 +206,9 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(content_fill::specs());
         v.extend(stubs::specs());
         v.extend(crate::storage::specs());
-        v.extend(crate::learn::specs());
         v.extend(crate::templates::specs());
         v.extend(crate::preview::specs());
+        v.retain(|spec| !crate::feature_policy::removed_command(spec.id));
         v
     })
 }

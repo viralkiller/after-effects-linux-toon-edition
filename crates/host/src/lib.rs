@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn wired_session_renders_demo_with_expressions() {
         let mut s = super::session();
-        s.execute("file.openDemoProject", json!({})).unwrap();
+        effectcraft_engine::commands::open_demo_fixture(&mut s).unwrap();
         let cid = s.active_comp_id().unwrap();
         let lid = s.active_comp().unwrap().layers[1].id.0;
         s.execute("prop.setExpression", json!({"layer": lid, "path": "transform/rotation", "expression": "time * 90"})).unwrap();
@@ -297,7 +297,7 @@ mod tests {
         let g = got.clone();
         let mut s = super::session();
         s.exporter = Some(Arc::new(super::FileExporter { sink: Some(Arc::new(move |p: &str, d: Vec<u8>| g.lock().unwrap().push((p.to_string(), d)))) }));
-        s.execute("file.openDemoProject", json!({})).unwrap();
+        effectcraft_engine::commands::open_demo_fixture(&mut s).unwrap();
         let dir = "/no-such-dir-effectcraft-sink-test";
         s.execute(
             "renderQueue.add",
@@ -327,7 +327,7 @@ mod tests {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/test-out/host-rq");
         let _ = std::fs::remove_dir_all(&dir);
         let mut s = super::session();
-        s.execute("file.openDemoProject", json!({})).unwrap();
+        effectcraft_engine::commands::open_demo_fixture(&mut s).unwrap();
         let out = dir.join("[compName]_[width]x[height].[fileExtension]");
         let r = s
             .execute(

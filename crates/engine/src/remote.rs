@@ -512,7 +512,7 @@ mod tests {
     fn layer_buffers_go_through_the_disk_store() {
         use effectcraft_render::disk_cache::{DiskIndex, Kind, LayerPrefetch};
         let mut s = Session::default();
-        s.execute("file.openDemoProject", json!({})).unwrap();
+        crate::commands::open_demo_fixture(&mut s).unwrap();
         let comp = s.active_comp_id().unwrap();
         let opts = RenderOpts { scale: 0.25, ..Default::default() };
         let t = Tick::from_seconds_f64(1.0);
@@ -579,7 +579,7 @@ mod tests {
     #[test]
     fn replica_follows_edits_through_diffs_and_renders_the_same_frames() {
         let mut s = Session::default();
-        s.execute("file.openDemoProject", json!({})).unwrap();
+        crate::commands::open_demo_fixture(&mut s).unwrap();
         let comp = s.active_comp_id().unwrap();
         let opts = RenderOpts { scale: 0.25, guides: true, ..Default::default() };
         let mut m = Mirror::default();
@@ -727,7 +727,7 @@ mod tests {
     #[test]
     fn deferred_readbacks_render_in_passes() {
         let mut s = Session::default();
-        s.execute("file.openDemoProject", json!({})).unwrap();
+        crate::commands::open_demo_fixture(&mut s).unwrap();
         let comp = s.active_comp_id().unwrap();
         s.execute("layer.newSolid", json!({"color": "#3388ff", "name": "Blue", "width": 200, "height": 120})).unwrap();
         s.execute("effect.apply", json!({"effect": "ec.blur.gaussian"})).unwrap();

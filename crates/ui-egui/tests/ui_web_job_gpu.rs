@@ -100,30 +100,3 @@ fn render_queue_jobs_render_on_the_worker_gpu() {
     }
 }
 
-#[test]
-fn analyses_render_their_input_on_the_worker_gpu() {
-    let _gpu = GPU_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    let Some(g) = Gpu::headless_deferred() else {
-        eprintln!("no GPU adapter: skipped");
-        return;
-    };
-    let (mut s, off) = page();
-    let l = s.active_comp().unwrap().layers[0].id;
-    s.execute("layer.select", json!({"layers": [l.0]})).unwrap();
-    s.execute("effect.apply", json!({"layers": [l.0], "effect": "Warp Stabilizer"})).unwrap();
-    s.execute("warp.analyze", json!({"layer": l.0, "wait": false})).unwrap();
-    let (req, _) = off.0.lock().unwrap().pop().expect("the analysis went to the worker");
-    let (cpu, _) = run(req.clone(), None);
-    let before = g.deferred_stats().unwrap();
-    let (gpu, _) = run(req, Some(&g));
-    let after = g.deferred_stats().unwrap();
-    let group = |r: &[WorkerReply]| r.iter().find_map(|r| if let WorkerReply::Group { group, .. } = r { Some(group.clone()) } else { None });
-    let failed = |r: &[WorkerReply]| r.iter().find_map(|r| if let WorkerReply::Failed { error } = r { Some(error.clone()) } else { None });
-    assert_eq!(group(&cpu).is_some(), group(&gpu).is_some(), "cpu {:?} / gpu {:?}", failed(&cpu), failed(&gpu));
-    assert!(group(&gpu).is_some(), "{:?}", failed(&gpu));
-    // The input frames (the effects above Warp Stabilizer) rendered on the device in passes.
-    assert!(after.1 - before.1 >= 6, "readbacks {before:?} → {after:?}");
-    assert!(after.0 - before.0 >= 12, "passes {before:?} → {after:?}");
-    let progress = gpu.iter().filter(|r| matches!(r, WorkerReply::Progress { .. })).count();
-    assert!(progress >= 1);
-}

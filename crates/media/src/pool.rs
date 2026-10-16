@@ -17,6 +17,9 @@ use crate::{MediaError, Result};
 /// Default frame-cache budget: 1 GiB of decoded frames.
 pub const DEFAULT_BUDGET: usize = 1 << 30;
 
+// Independent media pools must not share processed pixel identities.
+static NEXT_CACHE_REVISION: AtomicU64 = AtomicU64::new(1);
+
 /// The cache path of a missing image-sequence frame (no file can have this name).
 const PLACEHOLDER: &str = "\0missing frame";
 
@@ -36,6 +39,7 @@ fn colour_bars(w: u32, h: u32) -> Image {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct Key {
+    generation: u64,
     path: Arc<str>,
     frame: i64,
     /// The alpha interpretation (bits 0–1) and Preserve RGB (bit 2): they change the decoded
@@ -124,6 +128,7 @@ impl Lru {
     }
     /// Evict least-recently-used frames until within `budget` (the newest frame always stays).
     fn evict(&mut self, budget: usize) {
+        self.trim_spares(budget);
         while self.bytes > budget && self.map.len() > 1 {
             let Some((_, k)) = self.order.pop_first() else { break };
             if let Some(e) = self.map.remove(&k) {
@@ -132,8 +137,17 @@ impl Lru {
                     && let Ok(img) = Arc::try_unwrap(e.img)
                 {
                     self.spare.push(img.data);
+                    self.trim_spares(budget);
                 }
             }
+        }
+    }
+    fn spare_bytes(&self) -> usize {
+        self.spare.iter().map(|v| v.capacity().saturating_mul(std::mem::size_of::<Px>())).sum()
+    }
+    fn trim_spares(&mut self, budget: usize) {
+        while self.bytes.saturating_add(self.spare_bytes()) > budget && !self.spare.is_empty() {
+            self.spare.pop();
         }
     }
     /// A recycled buffer of exactly `len` pixels, or an empty Vec.
@@ -163,6 +177,8 @@ pub struct PoolStats {
 
 #[derive(Default)]
 struct CacheState {
+    epoch: u64,
+    generations: HashMap<String, u64>,
     lru: Lru,
     /// Frames being decoded right now (requests for them wait instead of decoding again).
     inflight: HashSet<Key>,
@@ -178,6 +194,7 @@ type SourceSlot = Arc<OnceLock<Option<SharedSource>>>;
 type GifSlot = Arc<OnceLock<std::result::Result<Arc<Anim>, String>>>;
 
 struct Inner {
+    revision: AtomicU64,
     /// Opened movie/audio sources by path.
     sources: Mutex<HashMap<Arc<str>, SourceSlot>>,
     /// Files opened into `sources` (see [`PoolStats::opened`]).
@@ -258,6 +275,7 @@ impl MediaPool {
     pub fn with_budget(bytes: usize) -> Self {
         Self {
             inner: Arc::new(Inner {
+                revision: AtomicU64::new(NEXT_CACHE_REVISION.fetch_add(1, Ordering::Relaxed)),
                 sources: Mutex::default(),
                 files: Mutex::default(),
                 models: Mutex::default(),
@@ -301,7 +319,7 @@ impl MediaPool {
             misses: i.misses.load(Ordering::Relaxed),
             prefetched: i.prefetched.load(Ordering::Relaxed),
             frames: c.lru.map.len(),
-            bytes: c.lru.bytes,
+            bytes: c.lru.bytes.saturating_add(c.lru.spare_bytes()),
             opened: i.opened.load(Ordering::Relaxed),
         }
     }
@@ -320,6 +338,12 @@ impl MediaPool {
     pub fn clear(&self) {
         self.clear_frames();
         lock(&self.inner.sources).clear();
+        let mut c = lock(&self.inner.cache);
+        c.epoch = NEXT_CACHE_REVISION.fetch_add(1, Ordering::Relaxed);
+        self.inner.revision.store(c.epoch, Ordering::Relaxed);
+        c.generations.clear();
+        c.lru = Lru::default();
+        c.last.clear();
     }
 
     /// Forget a file (after it changed on disk, or to retry a file that failed to open).
@@ -328,6 +352,10 @@ impl MediaPool {
         lock(&self.inner.models).remove(path);
         lock(&self.inner.gifs).remove(path);
         let mut c = lock(&self.inner.cache);
+        // Publish while frame lookups are locked out; old in-flight decodes keep old keys.
+        let revision = NEXT_CACHE_REVISION.fetch_add(1, Ordering::Relaxed);
+        self.inner.revision.store(revision, Ordering::Relaxed);
+        c.generations.insert(path.to_string(), revision);
         let keys: Vec<Key> = c.lru.map.keys().filter(|k| &*k.path == path).cloned().collect();
         for k in keys {
             c.lru.remove(&k);
@@ -626,7 +654,7 @@ impl Inner {
         };
         let interp = alpha | (u8::from(footage.preserve_rgb) << 2);
         let matte = if footage.alpha == AlphaMode::Premultiplied { footage.premul_color.map(f32::to_bits) } else { [0; 3] };
-        let key = |path: &str, frame| Key { path: path.into(), frame, interp, matte, size: (0, 0) };
+        let key = |path: &str, frame| Key { generation: 0, path: path.into(), frame, interp, matte, size: (0, 0) };
         match footage.kind {
             FootageKind::Sequence if !footage.sequence.is_empty() => {
                 let i = Self::frame_index(footage.frame_rate, t, footage.sequence_frames(), footage.loop_count);
@@ -664,10 +692,13 @@ impl Inner {
         }
         let mut loc = Self::locate(footage, t);
         let movie = loc.media_t.is_some();
-        if movie && let Some(size) = size {
-            loc.key.size = size;
+        if let Some((w, h)) = size.filter(|&(w, h)| w > 0 && h > 0 && w <= 16_384 && h <= 16_384)
+            && (movie || matches!(footage.kind, FootageKind::Still | FootageKind::Sequence))
+        {
+            loc.key.size = (w, h);
         }
         let mut c = lock(&self.cache);
+        loc.key.generation = c.generations.get(&*loc.key.path).copied().unwrap_or(c.epoch);
         // sequential playback of a movie: read the next frame ahead
         if playback && movie {
             let prev = c.last.insert(loc.key.path.clone(), loc.key.frame);
@@ -675,6 +706,7 @@ impl Inner {
                 let next_t = t + footage.frame_rate.frame_duration();
                 let mut next = Self::locate(footage, next_t);
                 next.key.size = loc.key.size;
+                next.key.generation = loc.key.generation;
                 if next.key != loc.key && !c.lru.map.contains_key(&next.key) && !c.inflight.contains(&next.key) {
                     self.prefetch(footage, next_t, size);
                 }
@@ -722,6 +754,17 @@ impl Inner {
     fn prefetch(self: &Arc<Self>, _footage: &Footage, _t: Tick, _size: Option<(u32, u32)>) {}
 
     fn decode(&self, loc: &Loc, footage: &Footage) -> Result<Image> {
+        if loc.media_t.is_none() && loc.key.size != (0, 0) {
+            let mut key = loc.key.clone();
+            key.size = (0, 0);
+            let cached = { lock(&self.cache).lru.get(&key) };
+            let full = match cached {
+                Some(img) => img,
+                None => Arc::new(self.decode(&Loc { key, media_t: None }, footage)?),
+            };
+            // Keep only the requested LOD on a cold miss; do not also pin a full-size image.
+            return Ok(effectcraft_raster::resample(&full, loc.key.size.0, loc.key.size.1));
+        }
         let op = AlphaOp::of(footage);
         let path = &loc.key.path;
         match loc.media_t {
@@ -770,6 +813,10 @@ impl Inner {
 }
 
 impl FootageSource for MediaPool {
+    fn cache_revision(&self) -> Option<u64> {
+        Some(self.inner.revision.load(Ordering::Relaxed))
+    }
+
     fn set_conform_folder(&self, folder: Option<std::path::PathBuf>) {
         MediaPool::set_conform_folder(self, folder);
     }
@@ -954,7 +1001,7 @@ mod tests {
     fn lru_respects_budget_and_recycles() {
         let mut c = Lru::default();
         let img = || Arc::new(Image::new(16, 16)); // 4 KiB + overhead
-        let k = |i| Key { path: "a".into(), frame: i, interp: 0, matte: [0; 3], size: (0, 0) };
+        let k = |i| Key { generation: 0, path: "a".into(), frame: i, interp: 0, matte: [0; 3], size: (0, 0) };
         let budget = 3 * (4096 + 64);
         for i in 0..10 {
             c.insert(k(i), img(), budget);
@@ -965,7 +1012,11 @@ mod tests {
         c.get(&k(7));
         c.insert(k(10), img(), budget);
         assert!(c.get(&k(7)).is_some() && c.get(&k(8)).is_none());
-        assert_eq!(c.spare.len(), MAX_SPARE);
+        assert!(c.bytes + c.spare_bytes() <= budget);
+        c.map.clear();
+        c.order.clear();
+        c.bytes = 0;
+        c.spare.push(Image::new(16, 16).data);
         assert_eq!(c.take_spare(256).len(), 256);
         assert!(c.take_spare(17).is_empty());
     }
@@ -1017,5 +1068,46 @@ mod tests {
         let raw = pool.frame_at(&Footage { preserve_rgb: true, ..f.clone() }, Tick::ZERO).unwrap().get(0, 0);
         assert_eq!(raw, [0.18, 0.5, 2.0, 1.0]);
         assert_eq!(pool.frame_at(&f, Tick::ZERO).unwrap().get(0, 0), encoded, "the default interpretation is cached apart");
+    }
+}
+
+#[cfg(test)]
+mod still_optimization_tests {
+    use super::*;
+    #[test]
+    fn still_lods_are_cached_separately_and_reload_invalidates_them() {
+        let pool = MediaPool::with_budget(1 << 20);
+        let png = |red| {
+            let img = image::RgbaImage::from_pixel(32, 16, image::Rgba([red, 0, 0, 255]));
+            let mut out = std::io::Cursor::new(Vec::new());
+            image::DynamicImage::ImageRgba8(img).write_to(&mut out, image::ImageFormat::Png).unwrap();
+            Arc::<[u8]>::from(out.into_inner())
+        };
+        pool.add_bytes("still.png", png(64));
+        let f = Footage { path: "still.png".into(), kind: FootageKind::Still, width: 32, height: 16, has_video: true, ..Default::default() };
+        let get = |w, h| FootageSource::frame_at_size(&pool, ItemId(1), &f, Tick::ZERO, w, h).unwrap();
+        let a = get(16, 8);
+        let b = get(16, 8);
+        let c = get(8, 4);
+        assert!(Arc::ptr_eq(&a, &b));
+        assert_eq!((a.width, a.height), (16, 8));
+        assert_eq!((c.width, c.height), (8, 4));
+        assert_eq!(pool.stats().frames, 2, "cold LOD decoding does not pin the full image");
+        let old_revision = pool.cache_revision();
+        pool.add_bytes("still.png", png(192));
+        assert_ne!(pool.cache_revision(), old_revision);
+        assert_ne!(get(16, 8).data, a.data);
+        let revision = pool.cache_revision();
+        pool.clear();
+        assert_ne!(pool.cache_revision(), revision);
+        assert_eq!(pool.stats().frames, 0);
+        assert_eq!((get(16, 8).width, get(16, 8).height), (16, 8));
+    }
+    #[test]
+    fn shrinking_budget_releases_spares() {
+        let mut l = Lru::default();
+        l.spare.push(Image::new(32, 32).data);
+        l.evict(1);
+        assert_eq!(l.spare_bytes(), 0);
     }
 }

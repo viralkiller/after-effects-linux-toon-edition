@@ -9,7 +9,7 @@ use serde_json::json;
 
 fn app() -> EffectcraftApp {
     let mut s = Session::default();
-    s.execute("file.openDemoProject", json!({})).unwrap();
+    effectcraft_engine::commands::open_demo_fixture(&mut s).unwrap();
     s.execute("comp.open", json!({"comp": "3D Showcase"})).unwrap();
     s.execute("time.set", json!({"time": 5.0})).unwrap();
     EffectcraftApp::new(s)

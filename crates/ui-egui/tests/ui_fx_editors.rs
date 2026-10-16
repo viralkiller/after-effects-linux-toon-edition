@@ -255,7 +255,7 @@ fn reshape_correspondence_points_on_the_viewer() {
 #[test]
 fn composition_tabs_and_scrolling_preview() {
     let mut s = Session::default();
-    s.execute("file.openDemoProject", json!({})).unwrap();
+    effectcraft_engine::commands::open_demo_fixture(&mut s).unwrap();
     let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
     h.run_steps(4);
     rect(&h, "panel.tab.Timeline.close");

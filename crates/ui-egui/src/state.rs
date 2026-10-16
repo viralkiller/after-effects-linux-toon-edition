@@ -59,10 +59,9 @@ impl Tool {
         &[Tool::Brush],
         &[Tool::Clone],
         &[Tool::Eraser],
-        &[Tool::RotoBrush, Tool::RefineEdge],
         &[Tool::Puppet, Tool::PuppetStarch, Tool::PuppetBend, Tool::PuppetAdvanced, Tool::PuppetOverlap],
     ];
-    pub const ALL: [Tool; 30] = [
+    pub const ALL: [Tool; 28] = [
         Tool::Selection,
         Tool::Hand,
         Tool::Zoom,
@@ -86,8 +85,6 @@ impl Tool {
         Tool::Brush,
         Tool::Clone,
         Tool::Eraser,
-        Tool::RotoBrush,
-        Tool::RefineEdge,
         Tool::Puppet,
         Tool::PuppetStarch,
         Tool::PuppetBend,
@@ -635,9 +632,6 @@ pub struct UiState {
     pub effects_view: EffectsView,
     pub snapping: bool,
     pub start_screen: bool,
-    /// The Home screen shows its Learn tab (tutorials) instead of the recent projects.
-    #[serde(default)]
-    pub home_learn: bool,
     /// The Home screen shows its Templates tab (New from Template gallery).
     #[serde(default)]
     pub home_templates: bool,
@@ -710,7 +704,6 @@ impl Default for UiState {
             effects_view: EffectsView::default(),
             snapping: true,
             start_screen: false,
-            home_learn: false,
             home_templates: false,
             align_to_selection: false,
             cache_when_idle: false,

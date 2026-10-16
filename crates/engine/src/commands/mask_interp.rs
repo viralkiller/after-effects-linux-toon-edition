@@ -21,7 +21,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Track Mask",
             ["Animation"],
             None,
-            "{layer?, mask?: uid|index|name, method?: position|positionScale|positionScaleRotation|positionScaleRotationSkew|perspective|faceOutline|faceDetailed, direction?: forward|backward|frameForward|frameBackward, start? (s), end? (s), wait?: block until done}",
+            "{layer?, mask?: uid|index|name, method?: position|positionScale|positionScaleRotation|positionScaleRotationSkew|perspective, direction?: forward|backward|frameForward|frameBackward, start? (s), end? (s), wait?: block until done}",
             has_mask,
             track_mask
         ),
@@ -30,7 +30,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Mask Tracking Method",
             [],
             None,
-            "{method: position|positionScale|positionScaleRotation|positionScaleRotationSkew|perspective|faceOutline|faceDetailed}",
+            "{method: position|positionScale|positionScaleRotation|positionScaleRotationSkew|perspective}",
             super::always,
             mask_method
         ),
@@ -126,10 +126,10 @@ fn has_mask(s: &Session) -> std::result::Result<(), String> {
 
 fn method_p(p: &Value, cmd: &str) -> Result<Option<MaskMethod>> {
     match str_p(p, "method") {
-        Some(m) => MaskMethod::from_name(m).map(Some).ok_or_else(|| {
+        Some(m) => MaskMethod::from_name(m).filter(|m| !m.is_face()).map(Some).ok_or_else(|| {
             bad(
                 cmd,
-                format!("unknown method `{m}` (position|positionScale|positionScaleRotation|positionScaleRotationSkew|perspective|faceOutline|faceDetailed)"),
+                format!("unknown method `{m}` (position|positionScale|positionScaleRotation|positionScaleRotationSkew|perspective)"),
             )
         }),
         None => Ok(None),

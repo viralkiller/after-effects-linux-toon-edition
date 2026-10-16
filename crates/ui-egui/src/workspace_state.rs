@@ -177,7 +177,7 @@ impl WorkspaceStore {
                 let value: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
                 // Only an explicitly legacy-shaped record can migrate. A versioned future
                 // snapshot must never deserialize as an empty defaulted legacy record.
-                let snapshot = if value.get("version").is_none()
+                let mut snapshot = if value.get("version").is_none()
                     && value.as_object().is_some_and(|fields| fields.contains_key("workspaces") || fields.contains_key("floating"))
                 {
                     let legacy: crate::SavedWorkspaces = serde_json::from_value(value).map_err(|e| e.to_string())?;
@@ -188,6 +188,9 @@ impl WorkspaceStore {
                 } else {
                     serde_json::from_value::<Snapshot>(value).map_err(|e| e.to_string())?
                 };
+                if snapshot.workspace == "Motion Tracking" {
+                    snapshot.workspace = "Default".into();
+                }
                 snapshot.validate()?;
                 Ok(snapshot)
             })
@@ -406,5 +409,68 @@ mod tests {
         let mut restored = UiState::default();
         WorkspaceStore::load(Some(&config), &mut restored);
         assert_eq!(restored.focused, PanelKind::Timeline);
+    }
+}
+
+/// Remove retired panels from current and saved layouts without resetting other panels.
+pub(crate) fn remove_retired_panels(ui: &mut UiState) {
+    if ui.workspace == "Motion Tracking" { ui.workspace = "Default".into(); }
+    for root in std::iter::once(&mut ui.dock).chain(ui.saved_workspaces.values_mut()) {
+        root.close(PanelKind::MaskInterpolation);
+        root.close(PanelKind::ContentAwareFill);
+        root.close(PanelKind::Tracker);
+        root.close(PanelKind::MediaBrowser);
+        root.close(PanelKind::VrCompEditor);
+    }
+    for groups in std::iter::once(&mut ui.floating).chain(ui.saved_floating.values_mut()) {
+        for group in groups.iter_mut() {
+            let shown = group.panels.get(group.active).copied();
+            group.panels.retain(|p| !p.retired());
+            group.active = shown.and_then(|p| group.panels.iter().position(|q| *q == p))
+                .unwrap_or(group.active.min(group.panels.len().saturating_sub(1)));
+        }
+        groups.retain(|group| !group.panels.is_empty());
+    }
+    if ui.focused.retired() {
+        ui.focused = PanelKind::Composition;
+    }
+    if ui.maximized.is_some_and(PanelKind::retired) {
+        ui.maximized = None;
+    }
+}
+
+#[cfg(test)]
+mod fork_reduction_tests {
+    use super::*;
+
+    #[test]
+    fn retired_panels_are_removed_without_losing_other_tabs() {
+        let mut ui = UiState::default();
+        ui.dock = DockNode::Tabs {
+            panels: vec![PanelKind::Project, PanelKind::MediaBrowser, PanelKind::Tracker, PanelKind::MaskInterpolation], active: 1,
+        };
+        ui.saved_workspaces.insert("Custom".into(), ui.dock.clone());
+        ui.floating = vec![Floating {
+            panels: vec![PanelKind::VrCompEditor, PanelKind::Preview, PanelKind::ContentAwareFill], active: 1,
+            rect: [0.0, 0.0, 300.0, 200.0],
+        }];
+        ui.saved_floating.insert("Custom".into(), ui.floating.clone());
+        ui.focused = PanelKind::Tracker;
+        ui.maximized = Some(PanelKind::MediaBrowser);
+        remove_retired_panels(&mut ui);
+        for root in std::iter::once(&ui.dock).chain(ui.saved_workspaces.values()) {
+            let mut panels = Vec::new();
+            root.panels(&mut panels);
+            assert_eq!(panels, vec![PanelKind::Project]);
+        }
+        for groups in std::iter::once(&ui.floating).chain(ui.saved_floating.values()) {
+            assert_eq!(groups[0].panels, vec![PanelKind::Preview]);
+            assert_eq!(groups[0].active, 0);
+        }
+        assert_eq!(ui.focused, PanelKind::Composition);
+        assert_eq!(ui.maximized, None);
+        for name in ["tracker", "mediaBrowser", "vrCompEditor", "maskInterpolation", "contentAwareFill"] {
+            assert!(PanelKind::from_name(name).is_none());
+        }
     }
 }

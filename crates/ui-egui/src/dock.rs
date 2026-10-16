@@ -55,7 +55,7 @@ pub enum PanelKind {
 }
 
 impl PanelKind {
-    pub const ALL: [PanelKind; 34] = [
+    pub const ALL: [PanelKind; 29] = [
         PanelKind::Project,
         PanelKind::EffectControls,
         PanelKind::Composition,
@@ -69,7 +69,6 @@ impl PanelKind {
         PanelKind::Character,
         PanelKind::Paragraph,
         PanelKind::Align,
-        PanelKind::Tracker,
         PanelKind::Wiggler,
         PanelKind::Smoother,
         PanelKind::MotionSketch,
@@ -79,18 +78,17 @@ impl PanelKind {
         PanelKind::Flowchart,
         PanelKind::History,
         PanelKind::Markers,
-        PanelKind::MaskInterpolation,
         PanelKind::ScriptConsole,
         PanelKind::EssentialGraphics,
         PanelKind::LumetriScopes,
         PanelKind::Footage,
-        PanelKind::MediaBrowser,
         PanelKind::Metadata,
         PanelKind::Progress,
-        PanelKind::ContentAwareFill,
         PanelKind::CreateNullsFromPaths,
-        PanelKind::VrCompEditor,
     ];
+    pub fn retired(self) -> bool {
+        matches!(self, Self::MediaBrowser | Self::VrCompEditor | Self::Tracker | Self::MaskInterpolation | Self::ContentAwareFill)
+    }
     pub fn title(self) -> &'static str {
         match self {
             PanelKind::Project => "Project",
@@ -274,8 +272,7 @@ fn vsplit(size: SplitSize, a: DockNode, b: DockNode) -> DockNode {
     DockNode::Split { vertical: true, size, a: Box::new(a), b: Box::new(b) }
 }
 
-/// The built-in workspaces: After Effects 2026's (Window ▸ Workspace), less Libraries (an Adobe
-/// service). Learn shows the Home screen (community links instead of Adobe's tutorials);
+/// The built-in workspaces: After Effects 2026's (Window ▸ Workspace), less Libraries and Learn.
 /// Essential Graphics uses the Properties panel; Undocked Panels floats the panels over the
 /// Composition panel.
 pub const WORKSPACES: &[&str] = &[
@@ -284,13 +281,11 @@ pub const WORKSPACES: &[&str] = &[
     "Small Screen",
     "Animation",
     "Effects",
-    "Motion Tracking",
     "Paint",
     "Text",
     "Minimal",
     "All Panels",
     "Review",
-    "Learn",
     "Essential Graphics",
     "Color",
     "Undocked Panels",
@@ -335,15 +330,6 @@ pub fn workspace(name: &str) -> DockNode {
                 hsplit(FixedB(300.0), tabs(&[Composition, Layer], 0), right(&[Info, Preview], &[EffectsPresets])),
             ),
             tabs(&[Timeline, RenderQueue], 0),
-        ),
-        "Motion Tracking" => vsplit(
-            Ratio(0.6),
-            hsplit(
-                FixedA(300.0),
-                tabs(&[Project, EffectControls], 0),
-                hsplit(FixedB(300.0), tabs(&[Layer, Composition], 0), right(&[Info, Preview], &[Tracker])),
-            ),
-            tabs(&[Timeline], 0),
         ),
         "Paint" => vsplit(
             Ratio(0.6),
@@ -411,7 +397,7 @@ pub fn workspace(name: &str) -> DockNode {
             Ratio(0.55),
             hsplit(
                 FixedA(300.0),
-                tabs(&[Project, EffectControls, Flowchart, History, MediaBrowser, Metadata], 0),
+                tabs(&[Project, EffectControls, Flowchart, History, Metadata], 0),
                 hsplit(
                     FixedB(300.0),
                     tabs(&[Composition, Layer, Footage], 0),
@@ -420,16 +406,13 @@ pub fn workspace(name: &str) -> DockNode {
                         &[
                             EffectsPresets,
                             Properties,
-                            Tracker,
                             Wiggler,
                             Smoother,
                             MotionSketch,
                             Paint,
                             Brushes,
                             Markers,
-                            ContentAwareFill,
                             CreateNullsFromPaths,
-                            VrCompEditor,
                         ],
                     ),
                 ),
@@ -1479,7 +1462,6 @@ mod tests {
         for w in [
             "Default",
             "Review",
-            "Learn",
             "Small Screen",
             "Standard",
             "All Panels",
@@ -1488,7 +1470,6 @@ mod tests {
             "Color",
             "Effects",
             "Minimal",
-            "Motion Tracking",
             "Paint",
             "Text",
             "Undocked Panels",
@@ -1496,9 +1477,9 @@ mod tests {
             assert!(WORKSPACES.contains(&w), "{w}");
         }
         assert!(!WORKSPACES.contains(&"Libraries"));
-        // Layouts differ from Default (except Learn, which is Default plus the Home screen).
+        // Layouts differ from Default (except Default).
         let def = workspace("Default");
-        for w in WORKSPACES.iter().filter(|w| !matches!(**w, "Default" | "Learn")) {
+        for w in WORKSPACES.iter().filter(|w| !matches!(**w, "Default")) {
             assert_ne!(workspace(w), def, "{w} falls back to Default");
         }
         assert!(workspace("Essential Graphics").contains(PanelKind::Properties));

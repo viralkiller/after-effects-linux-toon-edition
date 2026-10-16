@@ -101,7 +101,7 @@ fn source(s: &Session) -> RenderSource {
 #[test]
 fn viewer_frames_render_remotely_from_project_diffs() {
     let mut s = Session::default();
-    s.execute("file.openDemoProject", json!({})).unwrap();
+    effectcraft_engine::commands::open_demo_fixture(&mut s).unwrap();
     let comp = s.active_comp_id().unwrap();
     let c = s.project.comp(comp).unwrap().clone();
     let opts = RenderOpts { scale: 0.25, guides: true, ..Default::default() };

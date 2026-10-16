@@ -199,7 +199,7 @@ mod tests {
         let ev = app.session.execute("file.newFromTemplate", json!({})).unwrap();
         assert_eq!(ev["frontend"], "file.newFromTemplate");
         crate::menus::invoke(&mut app, &ctx, "file.newFromTemplate", json!({})).unwrap();
-        assert!(app.ui.start_screen && app.ui.home_templates && !app.ui.home_learn);
+        assert!(app.ui.start_screen && app.ui.home_templates);
         // One thumbnail per frame until all are rendered.
         for _ in 0..12 {
             frame(&mut app, &ctx);
@@ -211,7 +211,7 @@ mod tests {
             assert!(app.auto.find(&format!("home.templates.{}.open", t.id)).is_some(), "{}", t.id);
             assert!(app.template_thumbs.get(&t.id).is_some_and(Option::is_some), "{}: no thumbnail", t.id);
         }
-        for id in ["home.templates.saveCurrent", "home.tab.templates", "home.tab.learn"] {
+        for id in ["home.templates.saveCurrent", "home.tab.templates"] {
             assert!(app.auto.find(id).is_some(), "{id}");
         }
         assert!(app.auto.find("home.recent.0").is_none());

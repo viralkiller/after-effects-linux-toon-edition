@@ -5,7 +5,10 @@ use effectcraft_geom::{Mat3, vec2};
 use effectcraft_keyframe::Value;
 use effectcraft_path::{FillRule, StrokeStyle};
 use effectcraft_project::{FeatherFalloff, GroupKind, Layer, MaskMode, MaskMotionBlur};
-use effectcraft_raster::{Mask, box_blur, gaussian_blur};
+use effectcraft_raster::{
+    Mask,
+    blur::{mask_box_blur, mask_gaussian_blur},
+};
 use rayon::prelude::*;
 
 use crate::eval::EvalCtx;
@@ -89,15 +92,13 @@ fn coverage_at(ctx: &EvalCtx, layer: &Layer, g: &effectcraft_project::PropGroup,
     }
     let feather = ctx.v2(layer, g, "feather", [0.0; 2]);
     if feather[0] > 0.0 || feather[1] > 0.0 {
-        let img = cov.to_image();
-        let b = if linear {
+        cov = if linear {
             // One box pass: a straight ramp `feather` pixels wide across the edge.
             let r = |f: f64| ((f * buf.scale / 2.0).round() as usize).max(if f > 0.0 { 1 } else { 0 });
-            box_blur(&img, r(feather[0]), r(feather[1]), 1, false)
+            mask_box_blur(&cov, r(feather[0]), r(feather[1]), false)
         } else {
-            gaussian_blur(&img, feather[0] * buf.scale / 2.0, feather[1] * buf.scale / 2.0, false)
+            mask_gaussian_blur(&cov, feather[0] * buf.scale / 2.0, feather[1] * buf.scale / 2.0, false)
         };
-        cov = Mask::from_alpha(&b);
     }
     Some(cov)
 }

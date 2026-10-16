@@ -7,7 +7,7 @@ use crate::Session;
 
 fn session() -> Session {
     let mut s = Session::default();
-    s.execute("file.openDemoProject", json!({})).unwrap();
+    crate::commands::open_demo_fixture(&mut s).unwrap();
     s
 }
 

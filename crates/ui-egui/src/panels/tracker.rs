@@ -130,14 +130,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let cur = current(app);
     let can_track = has_comp && source.is_some();
 
-    // Track Camera / Warp Stabilizer and Track Motion / Stabilize Motion.
-    let r1 = Rect::from_min_size(pos2(x0, y), vec2(half, 22.0));
-    let r2 = Rect::from_min_size(pos2(x0 + half + 6.0, y), vec2(half, 22.0));
+    // Warp Stabilizer and ordinary motion tracking.
+    let r2 = Rect::from_min_size(pos2(x0, y), vec2(w, 22.0));
     let src_p = source.map(|l| json!({"layer": l.0})).unwrap_or_else(|| json!({}));
-    let can_camera = app.session.is_enabled("track.camera") && !app.session.is_camera_analyzing();
-    if button(app, ui, r1, "Track Camera", can_camera, "tracker.trackCamera") {
-        run(app, &ctx, "track.camera", json!({}));
-    }
     let can_warp = app.session.is_enabled("track.warpStabilizer") && !app.session.is_warp_analyzing();
     if button(app, ui, r2, "Warp Stabilizer", can_warp, "tracker.warpStabilizer") {
         run(app, &ctx, "track.warpStabilizer", json!({}));
@@ -364,7 +359,10 @@ fn mask_mode(app: &mut EffectcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, p
     p.text(pos2(field_x, y + 10.0), Align2::LEFT_CENTER, name, Tokens::ui(12.0), t.text);
     y += ROW;
     label(p, pos2(x0, y + 10.0), "Method:", &t);
-    let method = app.session.state.mask_track_method;
+    let method = if app.session.state.mask_track_method.is_face() {
+        MaskMethod::PositionScaleRotation
+    } else { app.session.state.mask_track_method };
+    app.session.state.mask_track_method = method;
     let dd = Rect::from_min_size(pos2(field_x, y), vec2(field_w, 20.0));
     let did = egui::Id::new("tracker-mask-method-dd");
     if widgets::dropdown(ui, dd, method.label(), &t, did).clicked() {
@@ -404,27 +402,6 @@ fn mask_mode(app: &mut EffectcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, p
         bx += 34.0;
     }
     y += 34.0;
-    // Face Tracking (Detailed Features): Extract & Copy Face Measurements.
-    let has_points = app
-        .session
-        .active_comp()
-        .and_then(|c| c.layer(layer))
-        .and_then(|l| l.effects())
-        .is_some_and(|fx| fx.groups().any(|g| g.match_id == effectcraft_engine::effects::face_track::POINTS_ID));
-    if method == MaskMethod::FaceDetailed || has_points {
-        let r = Rect::from_min_size(pos2(x0, y), vec2(w.min(260.0), 24.0));
-        if button(app, ui, r, "Extract & Copy Face Measurements", has_points && !running, "tracker.mask.extractFace") {
-            match crate::menus::invoke(app, ctx, "track.extractFaceMeasurements", json!({"layer": layer.0})) {
-                Ok(v) => {
-                    if let Some(text) = v.get("clipboard").and_then(|t| t.as_str()) {
-                        ctx.copy_text(text.to_string());
-                    }
-                }
-                Err(e) => app.ui.status = e,
-            }
-        }
-        y += 32.0;
-    }
     if let Some(pr) = app.session.mask_track_progress() {
         let bar = Rect::from_min_size(pos2(x0, y), vec2(w, 6.0));
         p.rect_filled(bar, 3.0, t.field_bg);
@@ -834,5 +811,6 @@ pub fn drag_params(d: &Drag, cpt: [f64; 2]) -> serde_json::Value {
 
 /// The tracked layer and tracker the viewer shows widgets for.
 pub fn viewer_track(app: &EffectcraftApp) -> Option<(LayerId, Uid)> {
+    if effectcraft_engine::feature_policy::removed_command("track.motion") { return None; }
     current(app)
 }

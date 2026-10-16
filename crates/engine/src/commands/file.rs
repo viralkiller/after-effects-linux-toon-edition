@@ -27,7 +27,7 @@ fn new_project(s: &mut Session, _: &Value) -> Result<Value> {
     Ok(Value::Null)
 }
 
-fn demo(s: &mut Session, _: &Value) -> Result<Value> {
+pub fn open_demo_fixture(s: &mut Session) -> Result<Value> {
     let p = crate::demo::demo_project();
     s.replace_project(p, None);
     if let Some(id) = s.project.items.values().find(|i| i.name == crate::demo::MAIN_COMP).map(|i| i.id) {
@@ -700,7 +700,6 @@ fn cycle_depth(s: &mut Session, _: &Value) -> Result<Value> {
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!("file.newProject", "New Project", ["File", "New"], Some("Cmd+Alt+N"), "{}", always, new_project),
-        cmd!("file.openDemoProject", "Open Demo Project", ["Help"], None, "{}", always, demo),
         cmd!("file.open", "Open Project...", ["File"], Some("Cmd+O"), "{path}", always, open),
         cmd!("file.save", "Save", ["File"], Some("Cmd+S"), "{path?}", always, save),
         cmd!("file.saveAs", "Save As...", ["File", "Save As"], Some("Cmd+Shift+S"), "{path}", always, save_as),

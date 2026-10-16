@@ -479,7 +479,7 @@ fn hash_values(h: &mut KeyHasher, ctx: &EvalCtx, layer: &Layer, g: &PropGroup) {
 }
 
 /// Cache key for the processed (source → masks → effects) buffer of `layer` at the context
-/// time, or `None` when the layer must not be cached (footage, precomps, cameras, adjustment
+/// time, or `None` when the layer must not be cached (moving footage, precomps, cameras, adjustment
 /// layers…).
 pub fn layer_key(ctx: &EvalCtx, layer: &Layer, scale: f64, draft: bool, blur: bool) -> Option<u64> {
     // Time effects see property values at other times. Keyframes are part of the hashed
@@ -488,7 +488,17 @@ pub fn layer_key(ctx: &EvalCtx, layer: &Layer, scale: f64, draft: bool, blur: bo
     if reads_other_times(layer) && layer.props.children.iter().any(|c| matches!(c, Node::Group(g) if g.match_id != "transform" && has_expression(g))) {
         return None;
     }
-    key_with(ctx, layer, scale, draft, blur, false)
+    let still = static_footage(ctx, layer);
+    key_with(ctx, layer, scale, draft, blur, still)
+}
+
+/// Only still sources with still proxies can ignore source time. Animated sources remain
+/// on the existing frame/input cache path, including a still with a movie proxy.
+pub fn static_footage(ctx: &EvalCtx, layer: &Layer) -> bool {
+    let LayerSource::Footage { item } = layer.source else { return false };
+    let Some(it) = ctx.project.item(item) else { return false };
+    matches!(&it.kind, ItemKind::Footage(f) if f.kind == effectcraft_project::FootageKind::Still)
+        && it.proxy.as_ref().is_none_or(|p| p.footage.kind == effectcraft_project::FootageKind::Still)
 }
 
 /// Cache key for a layer's *input* at the context time: source → masks → its first `effects`
@@ -554,7 +564,9 @@ fn key_any(ctx: &EvalCtx, layer: &Layer, scale: f64, draft: bool, blur: bool, fo
             // A proxy (and its Use Proxy switch) changes the pixels.
             hash_debug(&mut h, &it.proxy);
             item.hash(&mut h);
-            ctx.source_time(layer).0.hash(&mut h);
+            if !static_footage(ctx, layer) {
+                ctx.source_time(layer).0.hash(&mut h);
+            }
             // Frame blending mixes neighbouring source frames.
             ctx.comp.enable_frame_blending.hash(&mut h);
         }

@@ -72,6 +72,9 @@ fn plugins_load(s: &mut Session, p: &Value) -> Result<Value> {
 fn apply(s: &mut Session, p: &Value) -> Result<Value> {
     let name = str_p(p, "effect").ok_or_else(|| bad("effect.apply", "missing `effect` (id or name)"))?;
     let spec = effectcraft_effects::lookup(name).ok_or_else(|| bad("effect.apply", format!("unknown effect `{name}`")))?;
+    if effectcraft_effects::legacy_only(spec.id) {
+        return Err(bad("effect.apply", "this feature has been removed from this fork"));
+    }
     let (cid, ids) = layers_p(s, p)?;
     if ids.is_empty() {
         return Err(bad("effect.apply", "no layer"));

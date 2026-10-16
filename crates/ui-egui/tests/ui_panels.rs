@@ -35,15 +35,13 @@ fn click(h: &mut Harness<'_, EffectcraftApp>, id: &str) {
     h.run_steps(2);
 }
 
-/// #581: the header's Discord pill fits its label with even padding (it was a fixed 104 px with
-/// the text at its left).
 #[test]
-fn discord_pill_fits_its_label() {
+fn retired_controls_are_absent() {
     let h = harness();
-    let e = h.state().auto.find("header.discord").expect("the Discord pill").clone();
-    let text = h.ctx.fonts_mut(|f| f.layout_no_wrap("Discord".into(), effectcraft_ui_egui::theme::Tokens::semibold(12.0), egui::Color32::WHITE).size().x);
-    // Padding 10, the 14 px icon, a 6 px gap, the text, padding 12.
-    assert!((e.rect[2] - (text + 42.0)).abs() < 0.5, "{} for a {text} px label", e.rect[2]);
+    for id in ["header.discord", "header.github", "header.web", "header.workspace.Learn"] {
+        assert!(h.state().auto.find(id).is_none(), "{id}");
+    }
+    assert!(h.state().auto.find("header.appearance").is_some());
 }
 
 #[test]
@@ -52,10 +50,8 @@ fn window_menu_opens_the_new_panels() {
     for (name, kind, auto) in [
         ("lumetriScopes", PanelKind::LumetriScopes, "scopes.kind"),
         ("footage", PanelKind::Footage, "footage.empty"),
-        ("mediaBrowser", PanelKind::MediaBrowser, "mediaBrowser.path"),
         ("metadata", PanelKind::Metadata, "metadata.projectComment"),
         ("progress", PanelKind::Progress, ""),
-        ("contentAwareFill", PanelKind::ContentAwareFill, "contentFill.method"),
     ] {
         open(&mut h, name);
         assert!(h.state().ui.dock.contains(kind) || h.state().ui.floating.iter().any(|f| f.panels.contains(&kind)), "{name} shown");
@@ -223,20 +219,6 @@ fn edit_label_menu_shows_the_label_colours() {
     assert_eq!(h.state().session.active_comp().unwrap().layers[0].label, effectcraft_engine::color::Label::Green);
 }
 
-/// Learn opens the Home screen's tutorials; clicking another workspace tab closes them again,
-/// however quickly the tabs are clicked (they stayed over every workspace, #272).
-#[test]
-fn leaving_the_learn_workspace_closes_its_tutorials() {
-    let mut h = harness();
-    for name in ["Learn", "Default", "Learn", "Review", "Learn", "Learn", "Small Screen", "Standard", "Learn", "Default"] {
-        click(&mut h, &format!("header.workspace.{name}"));
-        assert_eq!(h.state().ui.workspace, name);
-        let learn = name == "Learn";
-        assert_eq!(h.state().ui.start_screen, learn, "{name}: the Home screen shows only for Learn");
-        assert_eq!(!h.state().auto.query("home.learn.").is_empty(), learn, "{name}: the tutorials show only for Learn");
-    }
-}
-
 /// #284: Settings ▸ Appearance ▸ UI Scale sizes the whole interface as soon as it is chosen,
 /// Cancel puts it back, OK keeps it; Ctrl+0 (Window ▸ Project) doesn't reset it.
 #[test]
@@ -285,7 +267,7 @@ fn ui_scale_setting_sizes_the_interface() {
 #[ignore]
 fn panels_snapshot() {
     let mut s = Session::default();
-    s.execute("file.openDemoProject", json!({})).unwrap();
+    effectcraft_engine::commands::open_demo_fixture(&mut s).unwrap();
     let solid = s.project.items.values().find(|i| matches!(i.kind, effectcraft_engine::project::ItemKind::Solid(_))).map(|i| i.id.0);
     let mut app = Some(EffectcraftApp::new(s));
     let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).build_eframe(|_| app.take().expect("app"));
@@ -303,10 +285,8 @@ fn panels_snapshot() {
         ("lumetriScopes", "vectorscopeYuv"),
         ("lumetriScopes", "histogram"),
         ("lumetriScopes", "paradeRgb"),
-        ("contentAwareFill", ""),
         ("metadata", ""),
         ("progress", ""),
-        ("mediaBrowser", ""),
         ("footage", ""),
     ] {
         if !scope.is_empty() {

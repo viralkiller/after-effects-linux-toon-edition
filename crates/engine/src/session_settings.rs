@@ -41,7 +41,7 @@ impl Session {
         let current = self.project.clone();
         self.history.trim(levels, &current);
         // Settings ▸ Roto Brush / Face Tracking: load (or drop) the chosen trained models.
-        self.apply_models();
+        // This fork does not load segmentation or face models from saved settings.
         self.prefs_revision += 1;
     }
 

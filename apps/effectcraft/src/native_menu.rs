@@ -190,7 +190,7 @@ mod tests {
     #[test]
     fn every_accelerator_parses_with_muda() {
         let mut s = effectcraft_engine::Session::default();
-        s.execute("file.openDemoProject", json!({})).unwrap();
+        effectcraft_engine::commands::open_demo_fixture(&mut s).unwrap();
         let app = EffectcraftApp::new(s);
         let spec = native_menu::build(&app);
         let mut n = 0;

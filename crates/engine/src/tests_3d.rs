@@ -231,7 +231,7 @@ fn camera_tools_edit_active_camera_with_undo() {
 #[test]
 fn demo_has_3d_showcase() {
     let mut s = Session::default();
-    s.execute("file.openDemoProject", json!({})).unwrap();
+    crate::commands::open_demo_fixture(&mut s).unwrap();
     let item = s.project.find_by_name(crate::demo::SHOWCASE_3D).unwrap();
     let cid = item.id;
     let c = s.project.comp(cid).unwrap();

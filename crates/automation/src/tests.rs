@@ -242,7 +242,7 @@ fn stdio_loop() {
     let input = [
         json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}}),
         json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
-        json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "open_project", "arguments": {"demo": true}}}),
+        json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "open_project", "arguments": {"new": true}}}),
     ]
     .iter()
     .map(|v| v.to_string() + "\n")
