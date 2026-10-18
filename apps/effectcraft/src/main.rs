@@ -224,6 +224,15 @@ fn main() -> eframe::Result {
             app.hooks.pick_open_project = Some(Box::new(|| {
                 rfd::FileDialog::new().add_filter("EffectCraft Project", &["ecproj", "ecprojx"]).pick_file().map(|p| p.to_string_lossy().to_string())
             }));
+            #[cfg(target_os = "linux")]
+            {
+                // Give the portal an owner and keep the UI event loop responsive.
+                let parented = rfd::AsyncFileDialog::new().set_parent(cc);
+                let ctx = cc.egui_ctx.clone();
+                app.hooks.file_dialog_async = Some(Box::new(move |dialog, done| {
+                    sheet_dialogs::show_parented(dialog, done, ctx.clone(), parented.clone());
+                }));
+            }
             app.hooks.system_theme = appearance::service();
             app.hooks.audio_device = Some(Box::new(audio_out::open));
             app.hooks.audio_devices = Some(Box::new(audio_out::devices));

@@ -16,7 +16,17 @@ type Answer = Pin<Box<dyn Future<Output = Vec<String>> + Send>>;
 /// Show `dialog` (on the main thread: the sheet opens here) and hand its paths to `done` once it
 /// closes, then wake the UI.
 pub fn show(dialog: FileDialog, done: DialogDone, ctx: egui::Context) {
-    let answer = open(dialog);
+    show_parented(dialog, done, ctx, AsyncFileDialog::new());
+}
+
+/// Use a dialog builder with the host window already set as its parent.
+pub fn show_parented(
+    dialog: FileDialog,
+    done: DialogDone,
+    ctx: egui::Context,
+    base: AsyncFileDialog,
+) {
+    let answer = open(dialog, base);
     let spawned = std::thread::Builder::new().name("ec-file-dialog".into()).spawn(move || {
         done(pollster::block_on(answer));
         ctx.request_repaint();
@@ -35,10 +45,10 @@ fn path(file: Option<FileHandle>) -> Vec<String> {
 }
 
 /// The dialog, as the blocking hooks in `main.rs` show it.
-fn open(dialog: FileDialog) -> Answer {
+fn open(dialog: FileDialog, base: AsyncFileDialog) -> Answer {
     match dialog {
         FileDialog::Open { exts, many } => {
-            let d = AsyncFileDialog::new().add_filter("Media", &exts);
+            let d = base.clone().add_filter("Media", &exts);
             if many {
                 let f = d.pick_files();
                 Box::pin(async move { paths(f.await) })
@@ -48,22 +58,22 @@ fn open(dialog: FileDialog) -> Answer {
             }
         }
         FileDialog::OpenProject => {
-            let f = AsyncFileDialog::new().add_filter("EffectCraft Project", &["ecproj", "ecprojx"]).pick_file();
+            let f = base.clone().add_filter("EffectCraft Project", &["ecproj", "ecprojx"]).pick_file();
             Box::pin(async move { path(f.await) })
         }
         FileDialog::Folder => {
-            let f = AsyncFileDialog::new().pick_folder();
+            let f = base.clone().pick_folder();
             Box::pin(async move { path(f.await) })
         }
         FileDialog::Save { default, ext, project } => {
             let at = std::path::Path::new(&default);
             let name = at.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
             let mut d = if project {
-                AsyncFileDialog::new().add_filter("EffectCraft Project", &["ecproj"])
+                base.clone().add_filter("EffectCraft Project", &["ecproj"])
             } else if ext.is_empty() {
-                AsyncFileDialog::new()
+                base.clone()
             } else {
-                AsyncFileDialog::new().add_filter(&ext, &[ext.as_str()])
+                base.clone().add_filter(&ext, &[ext.as_str()])
             };
             // A default with a folder that exists opens the dialog there.
             if let Some(dir) = at.parent().filter(|d| d.is_dir()) {

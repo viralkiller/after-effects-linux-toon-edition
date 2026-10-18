@@ -398,9 +398,28 @@ fn output_to_menu(it: &RenderQueueItem) -> Vec<(String, Value)> {
 
 /// Output To's save dialog, as After Effects' Output Movie To: it opens at the current output
 /// (folder and name, which ends in the format's extension) and offers that extension. `None`
-/// when the host has no save dialog; `Some(None)` when the dialog was cancelled.
+/// when the host has no save dialog; `Some(None)` when cancelled or awaiting an async answer.
 fn pick_output(app: &EffectcraftApp, it: &RenderQueueItem) -> Option<Option<String>> {
-    app.hooks.save_dialog(&app.session.resolve_output(it).unwrap_or_default())
+    let default = app.session.resolve_output(it).unwrap_or_default();
+    // Use the same parented, non-blocking host dialog as File > Import. Calling
+    // the legacy save hook directly bypasses the Linux window-parent fix.
+    if let Some(spawn) = &app.hooks.file_dialog_async {
+        let tx = app.dialog_answers.0.clone();
+        let answer = crate::DialogAnswer {
+            command: "renderQueue.setOutput".into(),
+            key: "path",
+            params: json!({"item": it.id}),
+            paths: Vec::new(),
+        };
+        spawn(
+            crate::FileDialog::save(&default),
+            Box::new(move |paths| {
+                let _ = tx.send(crate::DialogAnswer { paths, ..answer });
+            }),
+        );
+        return Some(None);
+    }
+    app.hooks.save_dialog(&default)
 }
 
 pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
@@ -728,7 +747,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 lp.with_clip_rect(path_rect.intersect(list)).text(pos2(path_rect.min.x, r.center().y), Align2::LEFT_CENTER, &shown, Tokens::ui(11.5), col);
                 // Clicking the file name opens the save dialog (Output Movie To); Alt-click, or a
                 // host without one, edits the name template in place.
-                let dialog = app.hooks.pick_save_file.is_some();
+                let dialog = app.hooks.file_dialog_async.is_some() || app.hooks.pick_save_file.is_some();
                 if resp.clicked() && !rendering {
                     let picked = if ui.input(|i| i.modifiers.alt) { None } else { pick_output(app, it) };
                     match picked {
@@ -803,6 +822,38 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn output_picker_uses_async_hook_and_preserves_cancellation() {
+        use super::*;
+        use std::sync::{Arc, Mutex};
+        let mut session = effectcraft_engine::Session::default();
+        session.execute("comp.new", json!({"name": "Output", "width": 64, "height": 36, "frameRate": 24, "duration": 1})).unwrap();
+        session.execute("renderQueue.add", json!({})).unwrap();
+        let mut app = EffectcraftApp::new(session);
+        let item = app.session.project.render_queue[0].clone();
+        let default = app.session.resolve_output(&item).unwrap();
+        app.hooks.pick_save_file = Some(Box::new(|_, _| panic!("must not use the blocking picker")));
+        let pending: Arc<Mutex<Vec<(crate::FileDialog, crate::DialogDone)>>> = Arc::default();
+        let queue = pending.clone();
+        app.hooks.file_dialog_async = Some(Box::new(move |dialog, done| queue.lock().unwrap().push((dialog, done))));
+
+        assert_eq!(pick_output(&app, &item), Some(None));
+        let (dialog, done) = pending.lock().unwrap().pop().unwrap();
+        assert_eq!(dialog, crate::FileDialog::save(&default));
+        assert_eq!(app.session.project.render_queue[0].output.output, item.output.output);
+        let chosen = std::env::temp_dir().join("toon-output-chosen.mp4").to_string_lossy().to_string();
+        done(vec![chosen.clone()]);
+        app.run_dialog_answers();
+        assert_eq!(app.session.project.render_queue[0].output.output, chosen);
+
+        let item = app.session.project.render_queue[0].clone();
+        assert_eq!(pick_output(&app, &item), Some(None));
+        let (_, done) = pending.lock().unwrap().pop().unwrap();
+        done(Vec::new());
+        app.run_dialog_answers();
+        assert_eq!(app.session.project.render_queue[0].output.output, chosen);
+    }
+
     #[test]
     fn stamps() {
         assert_eq!(super::utc_stamp(0), "1970-01-01 00:00:00");

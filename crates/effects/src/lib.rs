@@ -516,7 +516,79 @@ pub fn find(id: &str) -> Option<&'static EffectSpec> {
 /// ([`plugin::register_plugin`]), sorted by category then name.
 /// Effects retained only for existing project compatibility.
 pub fn legacy_only(id: &str) -> bool {
-    id == "ec.distort.warpstabilizer" || id.starts_with("ec.vr.") || matches!(id, camera_tracker::ID | face_track::POINTS_ID | face_track::MEASUREMENTS_ID | roto::ID)
+    // Toon Edition: retain these for existing projects only.
+    if matches!(
+        id,
+        "ec.blur.bilateral"
+            | "ec.blur.cameralens"
+            | "ec.blur.camerashakedeblur"
+            | "ec.blur.cccross"
+            | "ec.blur.ccradial"
+            | "ec.blur.ccvector"
+            | "ec.blur.channel"
+            | "ec.blur.compound"
+            | "ec.blur.radial"
+            | "ec.blur.smart"
+            | "ec.blur.unsharp"
+    ) {
+        return true;
+    }
+    toon_catalogue_legacy_only(id)
+        || id == "ec.distort.warpstabilizer"
+        || id.starts_with("ec.vr.")
+        || matches!(id, camera_tracker::ID | face_track::POINTS_ID | face_track::MEASUREMENTS_ID | roto::ID)
+}
+
+/// Effects omitted from the Toon Edition catalogue, but still found by ID for
+/// existing projects. Keep registry() and the render implementations intact.
+fn toon_catalogue_legacy_only(id: &str) -> bool {
+    matches!(
+        id,
+        "ec.3d.channelextract"
+            | "ec.3d.cryptomatte"
+            | "ec.3d.depthmatte"
+            | "ec.3d.depthoffield"
+            | "ec.3d.extractor"
+            | "ec.3d.fog3d"
+            | "ec.3d.idmatte"
+            | "ec.3d.identifier"
+            | "ec.distort.rollingshutterrepair"
+            | "ec.key.advancedspill"
+            | "ec.key.ccsimplewireremoval"
+            | "ec.key.colordifference"
+            | "ec.key.differencematte"
+            | "ec.key.innerouter"
+            | "ec.key.keycleaner"
+            | "ec.key.screen"
+            | "ec.keying.keylight"
+            | "ec.sim.cchair"
+            | "ec.sim.ccmrmercury"
+            | "ec.sim.foam"
+            | "ec.sim.caustics"
+            | "ec.sim.waveworld"
+            | "ec.sim.carddance"
+            | "ec.sim.particleplayground"
+            | "ec.sim.shatter"
+            | "ec.stylize.ccglass"
+            | "ec.stylize.ccplastic"
+            | "ec.perspective.bevelalpha"
+            | "ec.perspective.beveledges"
+            | "ec.stylize.emboss"
+            | "ec.stylize.coloremboss"
+            | "ec.transition.blockdissolve"
+            | "ec.transition.ccglasswipe"
+            | "ec.transition.ccgridwipe"
+            | "ec.transition.ccimagewipe"
+            | "ec.transition.ccjaws"
+            | "ec.transition.cclightwipe"
+            | "ec.transition.cclinesweep"
+            | "ec.transition.ccradialscalewipe"
+            | "ec.transition.ccscalewipe"
+            | "ec.transition.cctwister"
+            | "ec.transition.ccwarpomatic"
+            | "ec.transition.cardwipe"
+            | "ec.transition.venetian"
+    )
 }
 
 pub fn all() -> Vec<&'static EffectSpec> {
