@@ -41,7 +41,7 @@ corpus compares renders, each effect is assumed to differ somewhere, and users k
 | Obsolete | 9 | 9 | — |
 | Paint | 1 | 0 | Tablet pressure not read ([hardware-parity.md](hardware-parity.md)) |
 | Perspective | 10 | 9 | Chromatic Aberrations pan/tilt crash (#580) |
-| Simulation | 18 | 18 | Particle Playground lacks Particle Exploder, text particles, ephemeral mapper; CC Particle World camera fixed (#397) |
+| Simulation | 18 | 0 | Removed from Toon Edition |
 | Stylize | 25 | 25 | Motion Tile output size (#369) |
 | Text | 2 | 2 | — |
 | Time | 8 | 8 | Pixel Motion Blur averages frames, ignores Vector Detail (#535, fix pending) |

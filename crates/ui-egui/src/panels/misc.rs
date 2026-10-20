@@ -38,7 +38,7 @@ pub fn preview(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         (Icon::StepFwd, "time.nextFrame", "Next Frame"),
         (Icon::Last, "time.end", "Last Frame"),
     ];
-    let current = app.session.prefs.preview.current;
+    let current = app.session.project.preview.current;
     for (icon, cmd, tip) in buttons {
         let r = Rect::from_min_size(pos2(x, y), vec2(bw, 28.0));
         let icon = if cmd == "playback.toggle" && app.playback.playing { Icon::Pause } else { icon };
@@ -50,7 +50,7 @@ pub fn preview(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         app.auto.add(&format!("preview.{}", tip.replace([' ', '/'], "")), r, tip);
         x += bw + 4.0;
     }
-    let o = app.session.prefs.preview.get(current).clone();
+    let o = app.session.project.preview.get(current).clone();
     let mut changes: Vec<serde_json::Value> = vec![];
     let x0 = rect.min.x + 12.0;
     let xv = rect.min.x + 92.0;

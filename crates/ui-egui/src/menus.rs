@@ -498,7 +498,7 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
         return Ok(json!({"dialog": id}));
     }
     if id == "view.res.auto" {
-        app.ui.viewer.res = Resolution::Auto;
+        app.set_viewer_resolution(Resolution::Auto)?;
         return Ok(Value::Null);
     }
     if id == "view.theme.toggle" {
@@ -740,6 +740,17 @@ fn toggle(slot: &mut bool, p: &Value) -> Value {
 /// Perform a frontend command (from `Event::Frontend`).
 pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Value) -> Result<Value, String> {
     let now = ctx.input(|i| i.time);
+    if matches!(id, "view.res.full" | "view.res.half" | "view.res.third" | "view.res.quarter") {
+        let name = id.trim_start_matches("view.res.");
+        let resolution = Resolution::ALL.into_iter().find(|r| r.label().eq_ignore_ascii_case(name)).ok_or("unknown resolution")?;
+        app.set_viewer_resolution(resolution)?;
+        return Ok(Value::Null);
+    }
+    if id == "view.res.custom" && let Some(n) = p.get("factor").and_then(Value::as_u64) {
+        let resolution = match n.clamp(1, 40) { 1 => Resolution::Full, n => Resolution::Custom(n as u8) };
+        app.set_viewer_resolution(resolution)?;
+        return Ok(Value::Null);
+    }
     let v = &mut app.ui.viewer;
     Ok(match id {
         "app.about" => {
@@ -851,7 +862,7 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
         }
         "playback.audio" => {
             // Include Audio of the shortcut shown in the Preview panel.
-            let mut on = app.session.prefs.preview.active().include_audio;
+            let mut on = app.session.project.preview.active().include_audio;
             let r = toggle(&mut on, &p);
             app.session.execute("playback.settings.set", json!({"includeAudio": on})).map_err(|e| e.to_string())?;
             if !on {
@@ -870,33 +881,18 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
             v.zoom = Some(next);
             json!({"zoom": next})
         }
-        "view.res.full" | "view.res.half" | "view.res.third" | "view.res.quarter" => {
-            let r = id.trim_start_matches("view.res.");
-            v.res = Resolution::ALL.into_iter().find(|x| x.label().eq_ignore_ascii_case(r)).ok_or("unknown resolution")?;
-            Value::Null
-        }
         "view.res.custom" => {
-            match p.get("factor").and_then(Value::as_u64) {
-                Some(n) => {
-                    v.res = match n.clamp(1, 40) {
-                        1 => Resolution::Full,
-                        n => Resolution::Custom(n as u8),
-                    };
-                }
-                None => {
-                    let cur = match v.res {
-                        Resolution::Custom(n) => n as f64,
-                        _ => 2.0,
-                    };
-                    crate::panels::dialogs::form(
-                        app,
-                        "Custom Resolution",
-                        "view.res.custom",
-                        json!({}),
-                        vec![crate::panels::dialogs::Field::num("factor", "Render every n-th pixel", cur)],
-                    );
-                }
-            }
+            let cur = match v.res {
+                Resolution::Custom(n) => n as f64,
+                _ => 2.0,
+            };
+            crate::panels::dialogs::form(
+                app,
+                "Custom Resolution",
+                "view.res.custom",
+                json!({}),
+                vec![crate::panels::dialogs::Field::num("factor", "Render every n-th pixel", cur)],
+            );
             Value::Null
         }
         "view.rulers" => toggle(&mut v.rulers, &p),
@@ -1372,7 +1368,7 @@ pub(crate) fn entry_checked(app: &EffectcraftApp, e: &MenuEntry) -> Option<bool>
         "view.snapToGrid" => Some(v.snap_grid),
         "view.layerControls" => Some(v.show_layer_controls),
         "playback.cacheWhenIdle" => Some(app.ui.cache_when_idle),
-        "playback.audio" => Some(app.session.prefs.preview.active().include_audio),
+        "playback.audio" => Some(app.session.project.preview.active().include_audio),
         "view.res.full" | "view.res.half" | "view.res.third" | "view.res.quarter" => {
             Some(v.res.label().eq_ignore_ascii_case(e.command.trim_start_matches("view.res.")))
         }

@@ -300,9 +300,6 @@ pub struct GpuContext {
     /// The adapter can run the Advanced 3D rasteriser (`adv3d::raster_unsupported`); without
     /// it Advanced 3D scenes render on the CPU.
     pub(crate) adv3d_raster: bool,
-    /// GPU particle pipeline (built on first use) and simulation checkpoints.
-    pub(crate) particles: crate::particles::PipesCell,
-    pub(crate) particle_states: crate::particles::StatesCell,
     /// Deferred readbacks (a browser worker's WebGPU device), see [`crate::deferred`].
     pub(crate) deferred: Option<Arc<crate::deferred::Deferred>>,
     readbacks: Arc<crate::readback::Readbacks>,
@@ -400,8 +397,8 @@ fn kernel_source() -> String {
         include_str!("shaders/fx_extra.wgsl"),
         include_str!("shaders/fx_depth.wgsl"),
         include_str!("shaders/fx_lut.wgsl"),
-        include_str!("shaders/fx_sim.wgsl"),
-        include_str!("shaders/fx_particles.wgsl"),
+        include_str!("shaders/fx_cardwipe.wgsl"),
+        include_str!("shaders/fx_curlnoise.wgsl"),
         include_str!("shaders/fx_vr.wgsl"),
         include_str!("shaders/fx_light.wgsl"),
         include_str!("shaders/fx_transition.wgsl"),
@@ -666,8 +663,8 @@ impl GpuContext {
             .chain(crate::fx_extra::KERNELS)
             .chain(crate::fx_depth::KERNELS)
             .chain(crate::fx_lut::KERNELS)
-            .chain(crate::fx_sim::KERNELS)
-            .chain(crate::fx_particles::KERNELS)
+            .chain(crate::fx_cardwipe::KERNELS)
+            .chain(crate::fx_curlnoise::KERNELS)
             .chain(crate::fx_vr::KERNELS)
             .chain(crate::fx_light::KERNELS)
             .chain(crate::fx_transition::KERNELS)
@@ -766,8 +763,6 @@ impl GpuContext {
             zeros: Default::default(),
             adv3d: std::sync::OnceLock::new(),
             adv3d_raster: adv3d_unsupported.is_none(),
-            particles: Default::default(),
-            particle_states: Default::default(),
             deferred: None,
             readbacks,
         })

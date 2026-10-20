@@ -1060,7 +1060,7 @@ mod tests {
 
     #[test]
     fn track_analysis_runs_through_the_offload_as_one_undo_step() {
-        let (mut s, clip, _) = crate::tests_track::setup(crate::tests_track::patch_frames(pose));
+        let (mut s, clip, _) = crate::test_support::setup(crate::test_support::patch_frames(pose));
         s.offload = Some(Arc::new(InlineWith(s.footage.clone())));
         s.execute("track.motion", serde_json::json!({})).unwrap();
         s.execute("track.setPoint", serde_json::json!({"point": 1, "center": pose(0).0, "featureSize": [36, 36], "searchSize": [80, 80]})).unwrap();
@@ -1074,7 +1074,7 @@ mod tests {
         let tp = l.trackers().next().unwrap().0.track_points().next().unwrap().clone();
         let fc = tp.get("featureCenter").unwrap();
         assert_eq!(fc.keys.len(), 25);
-        let v = fc.value_at(crate::tests_track::frame_time(12)).as_vec2();
+        let v = fc.value_at(crate::test_support::frame_time(12)).as_vec2();
         assert!((v[0] - pose(12).0[0]).abs() < 0.3 && (v[1] - pose(12).0[1]).abs() < 0.3, "{v:?}");
         assert_eq!(s.history.undo.len(), undo + 1);
         assert_eq!(s.history.undo.last().unwrap().0, "Analyze Track");
@@ -1090,7 +1090,7 @@ mod tests {
 
     #[test]
     fn cancelling_offloaded_jobs() {
-        let (mut s, _, _) = crate::tests_track::setup(crate::tests_track::patch_frames(pose));
+        let (mut s, _, _) = crate::test_support::setup(crate::test_support::patch_frames(pose));
         let off = Arc::new(Hanging::default());
         s.offload = Some(off.clone());
         s.exporter = Some(Arc::new(crate::rq_tests::MockExporter { log: Default::default() }));

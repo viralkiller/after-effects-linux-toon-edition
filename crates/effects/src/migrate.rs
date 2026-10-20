@@ -81,14 +81,6 @@ pub const POPUP_LABEL_ALIASES: &[(&str, &str, &str, &str)] = &[
     // Keying, Matte, Obsolete.
     ("ec.key.colordifference", "view", "Source Only", "Source"),
     ("ec.key.colordifference", "view", "Matte Only", "Corrected Matte"),
-    // Simulation.
-    ("ec.sim.carddance", "rowsColumns", "Columns Follow Rows", "Columns Follows Rows"),
-    ("ec.sim.particleplayground", "persistentPropertyMapper/mapRedTo", "X Velocity", "X Speed"),
-    ("ec.sim.particleplayground", "persistentPropertyMapper/mapRedTo", "Y Velocity", "Y Speed"),
-    ("ec.sim.particleplayground", "persistentPropertyMapper/mapGreenTo", "X Velocity", "X Speed"),
-    ("ec.sim.particleplayground", "persistentPropertyMapper/mapGreenTo", "Y Velocity", "Y Speed"),
-    ("ec.sim.particleplayground", "persistentPropertyMapper/mapBlueTo", "X Velocity", "X Speed"),
-    ("ec.sim.particleplayground", "persistentPropertyMapper/mapBlueTo", "Y Velocity", "Y Speed"),
     // Generate.
     ("ec.generate.fractal", "setChoice", "Mandelbrot Over Inverse", "Mandelbrot Over Julia"),
     ("ec.generate.fractal", "setChoice", "Mandelbrot Inverse Over Mandelbrot", "Mandelbrot Inverse Over Julia"),
@@ -543,23 +535,6 @@ mod tests {
             assert_eq!(g.get("backLayer").unwrap().ui, ParamUi::Layer);
             assert_eq!(g.get("backSelf").unwrap().value, Value::Bool(self_));
         }
-    }
-
-    #[test]
-    fn particle_playground_mapper_targets_remap_by_label() {
-        let spec = find("ec.sim.particleplayground").unwrap();
-        let mut next = 1;
-        let mut g = instantiate(spec, &mut Ids(&mut next), "Particle Playground", [100.0, 50.0]);
-        let old: Vec<String> =
-            ["None", "Red", "Green", "Blue", "Kinetic Friction", "Scale", "X", "Y", "X Speed", "Y Speed", "X Force", "Y Force", "Opacity", "Mass"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
-        let pr = prop_at(&mut g, "persistentPropertyMapper/mapRedTo").unwrap();
-        pr.ui = ParamUi::Popup { options: old };
-        pr.value = Value::Enum(8);
-        assert!(upgrade_instance(spec, &mut g, &mut Ids(&mut next), [100.0, 50.0]));
-        assert_eq!(prop_at(&mut g, "persistentPropertyMapper/mapRedTo").unwrap().value, Value::Enum(15), "X Speed");
     }
 
     #[test]

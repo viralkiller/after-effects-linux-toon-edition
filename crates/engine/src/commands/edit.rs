@@ -205,7 +205,7 @@ fn delete(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!(ids.len()))
 }
 
-fn clear_clipboards(s: &mut Session) {
+pub(super) fn clear_clipboards(s: &mut Session) {
     s.state.clipboard.clear();
     s.state.key_clipboard.clear();
     s.state.effect_clipboard.clear();
@@ -221,16 +221,20 @@ fn copy(s: &mut Session, p: &Value) -> Result<Value> {
     if s.state.text_edit.is_some() && p.get("layers").is_none() {
         return super::text_edit::copy(s);
     }
+    // An explicit key selection wins over highlighted property rows. Otherwise stale rows
+    // can silently add unrelated keys or values to a multi-property copy.
+    if !s.state.selected_keys.is_empty()
+        && s.state.keys_selected_directly
+        && p.get("layers").is_none()
+    {
+        return s.execute("keys.copy", json!({}));
+    }
     if p.get("layers").is_none()
         && let Some(r) = copy_properties(s)?
     {
         return Ok(r);
     }
-    // Keyframes selected → copy keys (pasted at the CTI).
     if !s.state.selected_keys.is_empty() && p.get("layers").is_none() {
-        s.state.link_clipboard = None;
-        s.state.effect_clipboard.clear();
-        s.state.contents_clipboard.clear();
         return s.execute("keys.copy", json!({}));
     }
     // Effects selected (Effect Controls / timeline) → copy the effects.

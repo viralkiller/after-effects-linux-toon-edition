@@ -1,50 +1,18 @@
-//! Deferred readbacks for what job workers and frame workers render besides effect chains:
-//! GPU particles and Advanced 3D read back under keys too, so they render on the device in
-//! passes; and the job loops' pass driver (`effectcraft_render::passes`) settles natively.
+//! Deferred readbacks for Advanced 3D and frame jobs.
 
-use effectcraft_effects::EffectCtx;
 use effectcraft_project::BitDepth;
 use effectcraft_render::three_d::adv;
 use effectcraft_render::{Accelerator, Backend, LayerCache, NoFootage, RenderOpts, Renderer};
 use effectcraft_time::Tick;
 
-use crate::tests::{Pattern, diff, n, tolerance};
+use crate::tests::{Pattern, diff, tolerance};
 use crate::tests_adv3d::{off_share, run_of, scene, scene_project};
 use crate::tests_deferred::{deferred_gpu, render_passes};
-use crate::tests_particles::{Host, agree, params};
 
 /// The device's readbacks have landed (the browser's event loop; natively a poll).
 fn settle(g: &crate::Gpu) {
     g.wait();
     pollster::block_on(g.settled());
-}
-
-#[test]
-fn particles_resolve_in_passes() {
-    let Some((g, _lock)) = deferred_gpu() else { return };
-    let host = Host(g);
-    for (id, vals) in [
-        ("ec.sim.ccparticleworld", vec![("birthRate", n(2.0)), ("longevity", n(1.2)), ("extras/randomSeed", n(7.0))]),
-        ("ec.sim.particleplayground", vec![("grid/particlesAcross", n(0.0)), ("cannon/particlesPerSecond", n(90.0))]),
-    ] {
-        let p = params(id, &vals);
-        let ctx = |env| EffectCtx { params: &p, time: 1.5, layer_size: [320.0, 240.0], seed: 5, adjustment: false, env };
-        let run = |c: &EffectCtx| {
-            if id == "ec.sim.particleplayground" { effectcraft_effects::playground_state(c) } else { effectcraft_effects::particle_state(id, c) }
-        };
-        let cpu = run(&ctx(Default::default())).unwrap();
-        let env = || effectcraft_effects::EffectEnv { host: Some(&host), ..Default::default() };
-        g.frame_begin();
-        g.pass_begin();
-        // First pass: the simulation runs, its readback starts; no particles yet, the pass missed.
-        let first = run(&ctx(env())).unwrap();
-        assert!(first.is_empty() && g.pass_missed(), "{id}");
-        settle(g);
-        g.pass_begin();
-        let gpu = run(&ctx(env())).unwrap();
-        assert!(!g.pass_missed(), "{id}: served from the readback");
-        agree(&format!("deferred {id}"), &cpu, &gpu, 0.01, cpu.len() / 100 + 1);
-    }
 }
 
 #[test]

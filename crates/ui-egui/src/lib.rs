@@ -360,6 +360,7 @@ struct SavedWorkspaces {
 impl EffectcraftApp {
     pub fn new(session: Session) -> Self {
         let mut ui = UiState::default();
+        ui.viewer.res = session.project.viewport_resolution;
         let workspace_store = workspace_state::WorkspaceStore::load(session.config.as_deref(), &mut ui);
         workspace_state::remove_retired_panels(&mut ui);
         if ui.workspace == "Learn" {
@@ -436,6 +437,18 @@ impl EffectcraftApp {
     /// Effects' saved workspaces last until they are deleted (#320).
     pub(crate) fn store_saved_workspaces(&mut self) {
         self.save_workspace_state();
+    }
+
+    /// Persist a viewport resolution choice through the document undo/save path.
+    pub(crate) fn set_viewer_resolution(&mut self, resolution: state::Resolution) -> Result<(), String> {
+        if self.session.project.viewport_resolution != resolution {
+            self.session.edit("Viewport Resolution", None, |project, _| {
+                project.viewport_resolution = resolution;
+                Ok(())
+            }).map_err(|e| e.to_string())?;
+        }
+        self.ui.viewer.res = resolution;
+        Ok(())
     }
 
     /// Offer the frontend's commands (tools, timeline navigation…) for keyboard shortcuts.
@@ -954,7 +967,7 @@ impl EffectcraftApp {
     // ---------------------------------------------------------------- playback
 
     pub fn play(&mut self, now: f64) {
-        let sc = self.session.prefs.preview.current;
+        let sc = self.session.project.preview.current;
         self.play_with(now, sc);
     }
 
@@ -962,7 +975,7 @@ impl EffectcraftApp {
     /// resolution, loop, caching, full screen and include options).
     pub fn play_with(&mut self, now: f64, sc: effectcraft_engine::preview::PreviewShortcut) {
         let Some(c) = self.session.active_comp_arc() else { return };
-        let preset = self.session.prefs.preview.get(sc).clone();
+        let preset = self.session.project.preview.get(sc).clone();
         let plan = effectcraft_engine::preview::plan(&preset, &c, self.session.time());
         let fr = c.frame_rate;
         if plan.video {
@@ -1061,7 +1074,7 @@ impl EffectcraftApp {
             self.ui.maximized = m;
         }
         let Some(pl) = self.playback.plan else { return };
-        let move_time = self.session.prefs.preview.get(self.playback.shortcut).move_time_to_preview_time;
+        let move_time = self.session.project.preview.get(self.playback.shortcut).move_time_to_preview_time;
         if !move_time {
             self.session.set_time(pl.origin);
         } else if let Some(f) = self.playback.audio_frame
@@ -1073,7 +1086,7 @@ impl EffectcraftApp {
     }
 
     pub fn toggle_play(&mut self, now: f64) {
-        let sc = self.session.prefs.preview.current;
+        let sc = self.session.project.preview.current;
         self.toggle_play_with(now, sc);
     }
 
@@ -1085,7 +1098,7 @@ impl EffectcraftApp {
             self.play_with(now, sc);
             return;
         }
-        if self.playback.caching && self.session.prefs.preview.get(self.playback.shortcut).play_cached_frames && self.play_cached(now) {
+        if self.playback.caching && self.session.project.preview.get(self.playback.shortcut).play_cached_frames && self.play_cached(now) {
             return;
         }
         self.stop();
@@ -1555,7 +1568,9 @@ impl EffectcraftApp {
                 effectcraft_engine::Event::Toast { message, .. } => self.toast = Some((message, ctx.input(|i| i.time))),
                 effectcraft_engine::Event::OpenUrl(url) => ctx.open_url(egui::OpenUrl::new_tab(url)),
                 // Frames are keyed by content: an edit keeps those of comps it doesn't touch.
-                effectcraft_engine::Event::ProjectChanged { .. } => {}
+                effectcraft_engine::Event::ProjectChanged { .. } => {
+                    self.ui.viewer.res = self.session.project.viewport_resolution;
+                }
                 effectcraft_engine::Event::Frontend { command, params } => {
                     if let Err(e) = crate::menus::frontend(self, ctx, &command, params) {
                         self.ui.status = e;

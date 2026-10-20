@@ -9,7 +9,7 @@ use effectcraft_project::ParamUi;
 use effectcraft_raster::Px;
 use rayon::prelude::*;
 
-use crate::sim2::{Piece, PiecePlan, PieceTex, rot_axis, sort_far_first};
+use crate::card_pieces::{Piece, PiecePlan, PieceTex, rot_axis, sort_far_first};
 use crate::util::{Plane, gauss_plane, hash1, layer_rect, remap, unpremul};
 use crate::{Buf, EffectCtx, EffectSpec, ParamSpec, col, num, p, popup, slider};
 

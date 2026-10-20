@@ -1,6 +1,6 @@
 // GPU effects, generators of part C: see src/fx_gen2.rs. Every entry point is prefixed `fg2_`.
 // Geometry computed on the CPU (bolts, strokes, glyphs, audio marks, waves) arrives as item
-// tables in `data` — tile offsets, item indices, items (as fx_sim's tiled raster) — and is
+// tables in `data` — tile offsets, item indices, items (as Card Wipe's tiled raster) — and is
 // rasterised here with the CPU's coverage functions; closed-form generators run per pixel.
 
 fn fg2_inside(p: vec2<i32>) -> bool {

@@ -3,7 +3,7 @@
 //! Timewarp's frame building is shared with the GPU compositor as a plan
 //! (`effectcraft_effects::timewarp_plan`); this pins the CPU output of every method / Show /
 //! Matte Channel combination, with motion blur and a Warp Layer, so refactoring the plan keeps
-//! it bit-identical. Same hashing and re-pinning (`SIM_GOLDEN_PRINT=1`) as `sim_golden.rs`;
+//! it bit-identical. Same hashing and re-pinning (`SIM_GOLDEN_PRINT=1`) as `card_wipe_golden.rs`;
 //! pinned for aarch64 macOS.
 
 use effectcraft_effects::{Buf, EffectCtx, EffectEnv, EffectHost, LayerPixels, Params, apply, default_value, find};

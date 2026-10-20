@@ -1,6 +1,6 @@
 //! Bounded, exactly-once readback completion, independent of GPU callbacks.
 // Browser callbacks stay on their worker thread. The workspace's wgpu feature still
-// requires Send callbacks on non-atomic wasm, and ParticleSim requires Send + Sync.
+// requires Send callbacks on non-atomic wasm.
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;

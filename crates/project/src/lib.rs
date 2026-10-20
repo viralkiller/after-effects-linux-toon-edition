@@ -9,6 +9,7 @@
 pub mod build;
 pub mod essential;
 pub mod props;
+pub mod preview;
 pub mod render_queue;
 pub mod render_templates;
 pub mod sequence;
@@ -206,7 +207,7 @@ pub struct ProjectSettings {
     /// when a GPU adapter exists) or Mercury Software Only (`false`, the CPU compositor).
     #[serde(default = "yes")]
     pub gpu_acceleration: bool,
-    /// The project's comment (Metadata panel).
+    /// Legacy project comment, preserved when opening and saving existing projects.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub comment: String,
     /// Color Engine (Adobe-style built-in or OCIO with ACES working spaces).
@@ -1186,6 +1187,12 @@ impl Item {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Project {
+    /// Preview panel shortcuts, saved per project. Older projects start at Half.
+    #[serde(default)]
+    pub preview: preview::PreviewSettings,
+    /// Composition viewport resolution, independent of export resolution.
+    #[serde(default)]
+    pub viewport_resolution: preview::ViewportResolution,
     pub schema: u32,
     pub settings: ProjectSettings,
     pub items: BTreeMap<ItemId, Item>,
@@ -1204,6 +1211,8 @@ pub struct Project {
 impl Default for Project {
     fn default() -> Self {
         Project {
+            preview: preview::PreviewSettings::default(),
+            viewport_resolution: preview::ViewportResolution::default(),
             schema: SCHEMA_VERSION,
             settings: ProjectSettings::default(),
             items: BTreeMap::new(),

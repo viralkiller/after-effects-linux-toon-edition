@@ -301,12 +301,8 @@ Turn, CC Bender, CC Blobbylize), Cartoon, bevels, shapes, the transitions (CC li
 transitions, Block Dissolve), perspective (Radial Shadow, CC Cylinder / Sphere / Spotlight /
 Environment, 3D Glasses), generators, noise, grain, text (Numbers, Timecode), time, 3D Channel (aux channels as an
 extra texture), Immersive Video, colour management (colour programs from
-`effects::color_program`, LUTs in a storage buffer) and the simulations' render passes (the
-simulation stays on the CPU and hands its plan — sprites, pieces, blobs, grids — to a tiled
-rasteriser; the particle effects too, `gpu::fx_particles`: CC Particle World / Systems II,
-Particle Playground with its Layer Map frames in one atlas, CC Ball Action, CC Pixel Polly, CC
-Scatterize; plans too large for one item table draw in several passes over the previous one),
-and the geometry generators (Lightning, Advanced Lightning, Radio Waves, Stroke, Scribble,
+`effects::color_program`, LUTs in a storage buffer) and Card Wipe (CPU-planned cards rasterised by `gpu::fx_cardwipe`) and Curl Noise
+(`gpu::fx_curlnoise`), and the geometry generators (Lightning, Advanced Lightning, Radio Waves, Stroke, Scribble,
 Vegas, Write-on, Audio Spectrum / Waveform, Basic / Path Text: bolts, strokes, waves, audio
 marks and glyphs are planned on the CPU, shared with the CPU effect, and rasterised in tiles
 with the CPU's coverage functions); see

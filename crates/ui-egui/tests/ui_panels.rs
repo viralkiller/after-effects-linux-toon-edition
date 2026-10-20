@@ -50,7 +50,6 @@ fn window_menu_opens_the_new_panels() {
     for (name, kind, auto) in [
         ("lumetriScopes", PanelKind::LumetriScopes, "scopes.kind"),
         ("footage", PanelKind::Footage, "footage.empty"),
-        ("metadata", PanelKind::Metadata, "metadata.projectComment"),
         ("progress", PanelKind::Progress, ""),
     ] {
         open(&mut h, name);
@@ -285,7 +284,6 @@ fn panels_snapshot() {
         ("lumetriScopes", "vectorscopeYuv"),
         ("lumetriScopes", "histogram"),
         ("lumetriScopes", "paradeRgb"),
-        ("metadata", ""),
         ("progress", ""),
         ("footage", ""),
     ] {

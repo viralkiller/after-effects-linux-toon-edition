@@ -1,6 +1,6 @@
 //! Deterministic rendering (better than After Effects): the same project renders bit-identical
 //! frames every time and whatever the number of render threads. Renders the demo comps (and a
-//! comp of seeded-random effects: particles, grain, noise, wiggle expressions, Shatter) twice
+//! comp of seeded-random effects: grain, noise and wiggle expressions) twice
 //! on one thread and on several, and compares every float of every pixel.
 
 use effectcraft_engine::Session;
@@ -28,19 +28,16 @@ fn random_comp(s: &mut Session) -> ItemId {
     let solid = |s: &mut Session, name: &str, color: &str| {
         s.execute("layer.newSolid", json!({"name": name, "color": color, "width": 480, "height": 270})).unwrap()["layer"].as_u64().unwrap()
     };
-    let a = solid(s, "Particles", "#000000");
-    for fx in ["ec.sim.ccparticleworld", "ec.noise.addgrain"] {
+    let a = solid(s, "Grain", "#000000");
+    for fx in ["ec.noise.addgrain"] {
         s.execute("effect.apply", json!({"layer": a, "effect": fx})).unwrap();
     }
     let b = solid(s, "Noise", "#336699");
-    for fx in ["ec.noise.fractal", "ec.sim.ccsnowfall", "ec.noise.noisehls"] {
+    for fx in ["ec.noise.fractal", "ec.noise.noisehls"] {
         s.execute("effect.apply", json!({"layer": b, "effect": fx})).unwrap();
     }
     s.execute("prop.setExpression", json!({"layer": b, "path": "transform/position", "expression": "wiggle(3, 40)"})).unwrap();
     s.execute("prop.setExpression", json!({"layer": b, "path": "transform/opacity", "expression": "random(40, 90)"})).unwrap();
-    let c = solid(s, "Shatter", "#cc8844");
-    s.execute("layer.setTransform", json!({"layer": c, "prop": "scale", "value": [50, 50]})).unwrap();
-    s.execute("effect.apply", json!({"layer": c, "effect": "ec.sim.shatter"})).unwrap();
     cid
 }
 

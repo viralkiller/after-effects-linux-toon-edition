@@ -1,4 +1,4 @@
-//! Commands behind the Progress, Media Browser, Metadata and Lumetri Scopes panels.
+//! Commands behind the Progress, Media Browser and Lumetri Scopes panels.
 
 use effectcraft_project::ItemId;
 use effectcraft_raster::Image;
@@ -131,34 +131,6 @@ fn file_info(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(v)
 }
 
-// ---------------------------------------------------------------- Metadata
-
-fn item_ref(s: &Session, p: &Value) -> Option<ItemId> {
-    match p.get("item") {
-        Some(Value::Number(n)) => n.as_u64().map(ItemId),
-        Some(Value::String(name)) => s.project.items.values().find(|i| &i.name == name).map(|i| i.id),
-        _ => s.state.project_selection.first().copied(),
-    }
-}
-
-fn metadata(s: &mut Session, p: &Value) -> Result<Value> {
-    let project = mb::project_metadata(&s.project, s.path.as_deref());
-    let item = match item_ref(s, p) {
-        Some(id) => Some(mb::item_metadata(&s.project, s.project.item(id).ok_or_else(|| bad("item.metadata", format!("no item {}", id.0)))?)),
-        None => None,
-    };
-    Ok(json!({"project": project, "item": item}))
-}
-
-fn project_comment(s: &mut Session, p: &Value) -> Result<Value> {
-    let text = str_p(p, "comment").ok_or_else(|| bad("project.setProjectComment", "missing `comment`"))?.to_string();
-    s.edit("Project Comment", super::merge_p(p), |proj, _| {
-        proj.settings.comment = text;
-        Ok(())
-    })?;
-    Ok(Value::Null)
-}
-
 // ---------------------------------------------------------------- Lumetri Scopes
 
 /// The comp frame the scopes read (the viewer's image: over the comp background), at most
@@ -253,8 +225,6 @@ pub fn specs() -> Vec<CommandSpec> {
             browser_action
         ),
         query!("mediaBrowser.fileInfo", "File Info", "{path}", file_info),
-        query!("item.metadata", "Metadata", "{item?: id|name}", metadata),
-        cmd!("project.setProjectComment", "Project Comment", [], None, "{comment}", always, project_comment),
         query!(
             "scopes.analyze",
             "Lumetri Scopes",

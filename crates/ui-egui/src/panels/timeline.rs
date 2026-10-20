@@ -2591,6 +2591,12 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                                 ("Linear", "keys.interpolation", json!({"interpolation": "linear"})),
                                 ("Bezier", "keys.interpolation", json!({"interpolation": "bezier"})),
                                 ("Auto Bezier", "keys.interpolation", json!({"interpolation": "autoBezier"})),
+                                ("Select All Keys at This Frame", "keys.selectAtTime", json!({
+                                    "layers": if app.session.state.selected_layers.contains(&layer.id) {
+                                        app.session.state.selected_layers.iter().map(|id| id.0).collect::<Vec<_>>()
+                                    } else { vec![layer.id.0] },
+                                    "time": ct.seconds()
+                                })),
                                 ("Select All Keyframes", "keys.selectAll", json!({})),
                                 ("Delete", "keys.delete", json!({})),
                             ] {
@@ -3001,6 +3007,25 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             let target = hit_rows.iter().find(|(r, _)| ptr.y >= r.min.y && ptr.y < r.max.y).map(|(_, row)| row.layer);
             if released && let Some(l) = target {
                 actions.push(("effect.apply".into(), json!({"effect": e, "layers": [l.0]})));
+            }
+        } else if ctx.input(|i| i.modifiers.alt)
+            && let crate::panels::DragPayload::Item(item) = payload.as_ref()
+        {
+            // Alt-drop replaces the selected layer under the pointer; it never inserts a layer.
+            let target = hit_rows.iter().find(|(r, _)| ptr.y >= r.min.y && ptr.y < r.max.y)
+                .filter(|(_, row)| app.session.state.selected_layers.contains(&row.layer))
+                .filter(|(_, row)| comp.layer(row.layer).is_some_and(|l| !l.switches.locked));
+            if let Some((row_rect, row)) = target {
+                p.rect_stroke(*row_rect, 0.0, Stroke::new(2.0, t.accent), StrokeKind::Inside);
+                app.auto.add("timeline.replaceSourceDrop", *row_rect, "Replace this layer's source; keep its animation and effects");
+                if released {
+                    actions.push(("layer.replaceSource".into(), json!({"item": item, "layers": [row.layer.0]})));
+                }
+            } else {
+                ctx.set_cursor_icon(egui::CursorIcon::NotAllowed);
+                if released {
+                    app.ui.status = "Alt-drop onto a selected, unlocked layer to replace its source".into();
+                }
             }
         } else {
             let layer_rows: Vec<(Rect, LayerId)> = hit_rows.iter().filter(|(_, r)| matches!(r.kind, RowKind::Layer)).map(|(rr, r)| (*rr, r.layer)).collect();

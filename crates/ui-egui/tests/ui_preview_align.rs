@@ -66,16 +66,16 @@ fn preview_panel_edits_the_shown_shortcut() {
     ] {
         assert!(h.state().auto.find(id).is_some(), "{id}");
     }
-    assert!(h.state().session.prefs.preview.spacebar.loop_);
+    assert!(h.state().session.project.preview.spacebar.loop_);
     click(&mut h, "preview.loop");
-    assert!(!h.state().session.prefs.preview.spacebar.loop_);
+    assert!(!h.state().session.project.preview.spacebar.loop_);
     // Shortcut popup: Shift+Numpad 0; its options are shown and edited from now on.
     click(&mut h, "preview.shortcut");
     click(&mut h, "preview.shortcut.3");
-    assert_eq!(h.state().session.prefs.preview.current, PreviewShortcut::ShiftNumpad0);
+    assert_eq!(h.state().session.project.preview.current, PreviewShortcut::ShiftNumpad0);
     click(&mut h, "preview.fullScreen");
-    assert!(h.state().session.prefs.preview.shift_numpad0.full_screen);
-    assert!(!h.state().session.prefs.preview.spacebar.full_screen);
+    assert!(h.state().session.project.preview.shift_numpad0.full_screen);
+    assert!(!h.state().session.project.preview.spacebar.full_screen);
     // Range popup → Play Around Current Time shows the pre/post-roll.
     click(&mut h, "preview.range");
     click(&mut h, "preview.range.3");
@@ -210,6 +210,8 @@ fn cache_before_playback_plays_what_fits_in_ram() {
 #[test]
 fn auto_resolution_is_the_same_playing_and_paused() {
     let mut h = harness();
+    invoke(&mut h, "view.res.auto", json!({}));
+    set(&mut h, json!({"resolution": "auto"}));
     let paused = h.state().viewer_scale(0.5, 2.0);
     h.state_mut().playback.playing = true;
     assert_eq!(h.state().viewer_scale(0.5, 2.0), paused);
@@ -270,4 +272,30 @@ fn cache_frames_when_idle_survives_an_inverted_work_area() {
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
     assert!(!h.state().playback.playing);
+}
+
+#[test]
+fn toon_preview_defaults_and_project_restore() {
+    use effectcraft_engine::project::{Project, preview::ViewportResolution};
+    use effectcraft_engine::preview::PreviewResolution;
+    let mut h = harness();
+    assert!(!h.state().session.state.snapping);
+    assert_eq!(h.state().viewer_scale(1.0, 1.0), 0.5);
+    assert_eq!(h.state().session.project.preview.spacebar.resolution, PreviewResolution::Half);
+    h.state_mut().session.mark_saved();
+    invoke(&mut h, "view.res.quarter", json!({}));
+    h.run_steps(2);
+    set(&mut h, json!({"shortcut": "spacebar", "resolution": "full"}));
+    assert!(h.state().session.is_dirty());
+    let saved = h.state().session.project.to_json();
+    let restored = Project::from_json(&saved).unwrap();
+    assert_eq!(restored.viewport_resolution, ViewportResolution::Quarter);
+    assert_eq!(restored.preview.spacebar.resolution, PreviewResolution::Full);
+    h.state_mut().session.replace_project(Project::default(), None);
+    h.run_steps(2);
+    assert_eq!(h.state().viewer_scale(1.0, 1.0), 0.5);
+    h.state_mut().session.replace_project(restored, None);
+    h.run_steps(2);
+    assert_eq!(h.state().viewer_scale(1.0, 1.0), 0.25);
+    assert_eq!(h.state().session.project.preview.spacebar.resolution, PreviewResolution::Full);
 }

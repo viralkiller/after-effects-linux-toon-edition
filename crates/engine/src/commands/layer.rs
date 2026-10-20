@@ -302,6 +302,60 @@ fn add_item(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"layer": id.0}))
 }
 
+/// Replace a source reference without rebuilding or retiming the layer.
+fn replace_source(s: &mut Session, p: &Value) -> Result<Value> {
+    let (cid, ids) = layers_p(s, p)?;
+    if ids.is_empty() {
+        return Err(bad("layer.replaceSource", "select a layer first"));
+    }
+    let item = match p.get("item") {
+        Some(Value::Number(n)) => ItemId(n.as_u64().ok_or_else(|| bad("layer.replaceSource", "invalid item id"))?),
+        Some(Value::String(name)) => s.project.find_by_name(name).map(|it| it.id)
+            .ok_or_else(|| bad("layer.replaceSource", format!("no item `{name}`")))?,
+        _ => return Err(bad("layer.replaceSource", "missing `item`")),
+    };
+    let source = match &s.project.item(item).ok_or_else(|| bad("layer.replaceSource", "no such item"))?.kind {
+        ItemKind::Comp(_) => LayerSource::Comp { item },
+        ItemKind::Solid(_) => LayerSource::Solid { item },
+        ItemKind::Footage(f) if !matches!(f.kind, effectcraft_project::FootageKind::Data | effectcraft_project::FootageKind::Model) => {
+            LayerSource::Footage { item }
+        }
+        _ => return Err(bad("layer.replaceSource", "choose footage, a solid or a composition")),
+    };
+    // Iterative traversal also terminates on malformed projects with existing comp cycles.
+    let mut pending = vec![item];
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(next) = pending.pop() {
+        if next == cid {
+            return Err(bad("layer.replaceSource", "replacement would create a composition cycle"));
+        }
+        if seen.insert(next) && let Some(comp) = s.project.comp(next) {
+            for layer in &comp.layers {
+                if let LayerSource::Comp { item } = layer.source {
+                    pending.push(item);
+                }
+            }
+        }
+    }
+    let comp = s.project.comp(cid).ok_or(EngineError::NoComp)?;
+    for id in &ids {
+        let layer = comp.layer(*id).ok_or_else(|| bad("layer.replaceSource", "no such layer"))?;
+        if layer.switches.locked {
+            return Err(bad("layer.replaceSource", "unlock the target layer first"));
+        }
+        if !matches!(layer.source, LayerSource::Footage { .. } | LayerSource::Comp { .. } | LayerSource::Solid { .. }) {
+            return Err(bad("layer.replaceSource", "the target must be a footage, solid or composition layer"));
+        }
+    }
+    s.edit("Replace Layer Source", None, |project, _| {
+        for id in &ids {
+            layer_mut(project, cid, *id)?.source = source.clone();
+        }
+        Ok(())
+    })?;
+    Ok(json!({"layers": ids.iter().map(|id| id.0).collect::<Vec<_>>(), "item": item.0}))
+}
+
 fn select(s: &mut Session, p: &Value) -> Result<Value> {
     let cid = comp_id(s, p)?;
     let comp = s.project.comp(cid).ok_or(EngineError::NoComp)?;
@@ -1500,6 +1554,7 @@ pub fn specs() -> Vec<CommandSpec> {
             has_comp,
             add_item
         ),
+        cmd!("layer.replaceSource", "Replace Layer Source", [], None, "{item: id|name, layers?}", has_comp, replace_source),
         cmd!("layer.select", "Select Layers", [], None, "{layers: [id|name|#n], add?, toggle?}", has_comp, select),
         cmd!("layer.selectNext", "Select Next Layer", [], Some("Cmd+ArrowDown"), "{add?}", has_comp, select_next),
         cmd!("layer.selectPrevious", "Select Previous Layer", [], Some("Cmd+ArrowUp"), "{add?}", has_comp, select_prev),

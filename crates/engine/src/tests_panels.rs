@@ -1,4 +1,4 @@
-//! M13.6 panels and tools through the commands: Progress (jobs), Media Browser, Metadata,
+//! M13.6 panels and tools through the commands: Progress (jobs),
 //! Lumetri Scopes, the Footage panel's Overlay / Ripple Insert edits, Content-Aware Fill, Scene
 //! Edit Detection, Auto-trace and Align Video to Data.
 
@@ -114,35 +114,6 @@ fn progress_lists_and_cancels_jobs() {
     assert_eq!(s.job_log.last().unwrap().status, "done");
     assert!(s.undo());
     assert_eq!(s.project.settings.comment, "");
-}
-
-// ---------------------------------------------------------------- Media Browser & Metadata
-
-#[test]
-fn ordinary_import_and_metadata() {
-    let dir = tmp("browser");
-    std::fs::create_dir_all(dir.join("Footage")).unwrap();
-    std::fs::write(dir.join("shot.mov"), b"0123").unwrap();
-    std::fs::write(dir.join("data.csv"), "time,v\n0,1\n").unwrap();
-    std::fs::write(dir.join("readme.txt"), "x").unwrap();
-    let mut s = Session::default();
-    let r = s.execute("file.import", json!({"paths": [dir.join("data.csv").to_string_lossy()]})).unwrap();
-    let id = r["items"][0].as_u64().unwrap();
-    let m = s.execute("item.metadata", json!({"item": id})).unwrap();
-    assert_eq!(m["item"]["type"], json!("Data"));
-    assert_eq!(m["item"]["codec"], json!("CSV"));
-    assert_eq!(m["item"]["dataRows"], json!(1));
-    assert!(m["item"]["modified"].as_str().unwrap().ends_with('Z'));
-    assert_eq!(m["project"]["footage"], json!(1));
-    // Editable comments: item (undoable) and project.
-    s.execute("project.setComment", json!({"items": [id], "comment": "telemetry"})).unwrap();
-    s.execute("project.setProjectComment", json!({"comment": "client cut"})).unwrap();
-    let m = s.execute("item.metadata", json!({"item": id})).unwrap();
-    assert_eq!(m["item"]["comment"], json!("telemetry"));
-    assert_eq!(m["project"]["comment"], json!("client cut"));
-    s.undo();
-    assert_eq!(s.project.settings.comment, "");
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 // ---------------------------------------------------------------- Lumetri Scopes
@@ -392,4 +363,3 @@ fn panels_commands_are_wired() {
         assert!(s.is_enabled(id), "{id}");
     }
 }
-

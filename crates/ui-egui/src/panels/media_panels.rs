@@ -1,96 +1,12 @@
-//! Metadata, Progress and background import status.
+//! Progress and background import status.
 
 use crate::i18n::tr;
 use egui::{Align2, Rect, Stroke, pos2, vec2};
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::panel_kit as kit;
 use crate::theme::Tokens;
 use crate::{EffectcraftApp, widgets};
-
-// ---------------------------------------------------------------- Metadata
-
-fn rows_of(v: &Value) -> Vec<(String, String)> {
-    let Some(o) = v.as_object() else { return vec![] };
-    o.iter()
-        .filter(|(k, v)| !v.is_null() && !matches!(k.as_str(), "comment" | "id"))
-        .map(|(k, v)| {
-            let s = match v {
-                Value::String(s) => s.clone(),
-                Value::Number(n) => n.as_f64().map(|f| if f.fract() == 0.0 { format!("{f:.0}") } else { format!("{f:.3}") }).unwrap_or_default(),
-                other => other.to_string(),
-            };
-            (k.clone(), s)
-        })
-        .collect()
-}
-
-/// An editable comment field; returns the edited text when it changes.
-fn comment_field(ui: &mut egui::Ui, r: Rect, id: &str, text: &str) -> Option<String> {
-    let key = egui::Id::new(("meta-comment", id));
-    let mut buf: String = ui.data(|d| d.get_temp(key)).unwrap_or_else(|| text.to_string());
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r));
-    let resp = child.add(egui::TextEdit::multiline(&mut buf).desired_width(r.width()).desired_rows(2).hint_text(tr("Add a comment")));
-    if resp.has_focus() || resp.changed() {
-        ui.data_mut(|d| d.insert_temp(key, buf.clone()));
-    } else {
-        ui.data_mut(|d| d.remove::<String>(key));
-    }
-    (resp.lost_focus() && buf != text).then_some(buf)
-}
-
-pub fn metadata(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
-    let t = app.tokens;
-    let p = ui.painter().with_clip_rect(rect);
-    p.rect_filled(rect, 0.0, t.panel_bg);
-    let Ok(v) = app.session.execute("item.metadata", json!({})) else { return };
-    let mut y = rect.min.y + 8.0;
-    let x0 = rect.min.x + 12.0;
-    let xv = x0 + 120.0;
-    let section = |p: &egui::Painter, y: &mut f32, title: &str| {
-        p.text(pos2(x0, *y + 8.0), Align2::LEFT_CENTER, title, Tokens::semibold(12.0), t.text);
-        *y += 22.0;
-    };
-    if let Some(item) = v.get("item").filter(|i| !i.is_null()) {
-        let name = item["name"].as_str().unwrap_or_default().to_string();
-        let id = item["id"].as_u64().unwrap_or(0);
-        section(&p, &mut y, &format!("{name} ({})", item["type"].as_str().unwrap_or("")));
-        kit::label(ui, pos2(x0, y), "Comment", &t);
-        let r = Rect::from_min_size(pos2(xv, y), vec2((rect.max.x - xv - 12.0).max(80.0), 40.0));
-        app.auto.add("metadata.itemComment", r, item["comment"].as_str().unwrap_or(""));
-        if let Some(c) = comment_field(ui, r, &format!("item{id}"), item["comment"].as_str().unwrap_or("")) {
-            kit::exec(app, "project.setComment", json!({"items": [id], "comment": c}));
-        }
-        y += 48.0;
-        for (k, val) in rows_of(item) {
-            if matches!(k.as_str(), "name" | "type") {
-                continue;
-            }
-            p.text(pos2(x0, y + 8.0), Align2::LEFT_CENTER, &k, Tokens::ui(11.5), t.text_dim);
-            p.text(pos2(xv, y + 8.0), Align2::LEFT_CENTER, &val, Tokens::ui(11.5), t.text);
-            app.auto.add(&format!("metadata.item.{k}"), Rect::from_min_size(pos2(xv, y), vec2(200.0, 16.0)), &val);
-            y += 18.0;
-        }
-        y += 10.0;
-    } else {
-        p.text(pos2(x0, y + 8.0), Align2::LEFT_CENTER, tr("Select an item in the Project panel"), Tokens::ui(12.0), t.text_faint);
-        y += 28.0;
-    }
-    let proj = v["project"].clone();
-    section(&p, &mut y, "Project");
-    kit::label(ui, pos2(x0, y), "Comment", &t);
-    let r = Rect::from_min_size(pos2(xv, y), vec2((rect.max.x - xv - 12.0).max(80.0), 40.0));
-    app.auto.add("metadata.projectComment", r, proj["comment"].as_str().unwrap_or(""));
-    if let Some(c) = comment_field(ui, r, "project", proj["comment"].as_str().unwrap_or("")) {
-        kit::exec(app, "project.setProjectComment", json!({"comment": c}));
-    }
-    y += 48.0;
-    for (k, val) in rows_of(&proj) {
-        p.text(pos2(x0, y + 8.0), Align2::LEFT_CENTER, &k, Tokens::ui(11.5), t.text_dim);
-        p.text(pos2(xv, y + 8.0), Align2::LEFT_CENTER, &val, Tokens::ui(11.5), t.text);
-        y += 18.0;
-    }
-}
 
 // ---------------------------------------------------------------- Progress
 

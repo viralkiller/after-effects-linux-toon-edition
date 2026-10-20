@@ -149,8 +149,7 @@ pub(crate) fn comp_scene(ctx: &EvalCtx, layer: &Layer) -> Option<effectcraft_eff
         };
         Some(effectcraft_effects::CompLight { pos: [pos.x, pos.y, pos.z], dir: [dir.x / len, dir.y / len, dir.z / len], color: l.color, kind })
     });
-    let camera_layer = ctx.comp.active_camera(ctx.time).is_some();
-    Some(effectcraft_effects::CompScene { camera: Some(camera), camera_layer, light })
+    Some(effectcraft_effects::CompScene { camera: Some(camera), light })
 }
 
 /// Nesting limit for effects that render layers (other layers, other times).
@@ -161,9 +160,6 @@ impl EffectHost for FxHost<'_, '_, '_> {
         self.original
     }
 
-    fn particles(&self) -> Option<&dyn effectcraft_effects::psim::ParticleSim> {
-        self.r.active_accel().and_then(|a| a.particles())
-    }
     fn layer(&self, id: u64, masks_and_effects: bool) -> Option<LayerPixels> {
         let other = self.ctx.layer(effectcraft_project::LayerId(id))?;
         if (other.id == self.layer.id && masks_and_effects) || self.r.depth > MAX_FX_DEPTH {
@@ -337,11 +333,6 @@ pub trait Accelerator: Send + Sync {
     /// resolved, averaged, depth of field, encoding) with [`three_d::adv::render_prepared`]'s
     /// semantics. `None` = not handled (the CPU path runs, using [`Self::raster_3d`]).
     fn render_3d(&self, _run: &three_d::adv::Prepared) -> Option<three_d::adv::Rendered> {
-        None
-    }
-    /// A particle simulation backend (GPU particles) for the stepped particle effects, with
-    /// the CPU simulation's semantics. `None` = they simulate on the CPU.
-    fn particles(&self) -> Option<&dyn effectcraft_effects::psim::ParticleSim> {
         None
     }
     /// Timing history [`Backend::Auto`] uses to send each comp's top-level frames to the

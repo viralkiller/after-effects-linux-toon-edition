@@ -1160,7 +1160,6 @@ Window
   Essential Graphics | window.panel {"panel":"essentialGraphics"}
   Info | window.panel {"panel":"info"} | Cmd+2
   Lumetri Scopes | window.panel {"panel":"lumetriScopes"}
-  Metadata | window.panel {"panel":"metadata"}
   Motion Sketch | window.panel {"panel":"motionSketch"}
   Paint | window.panel {"panel":"paint"} | Cmd+8
   Paragraph | window.panel {"panel":"paragraph"} | Cmd+7

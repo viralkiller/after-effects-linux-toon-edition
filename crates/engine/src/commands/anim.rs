@@ -45,6 +45,7 @@ fn copy(s: &mut Session, _: &Value) -> Result<Value> {
         clip.push(KeyClip { layer: lid, path, keys });
     }
     let n: usize = clip.iter().map(|c| c.keys.len()).sum();
+    super::edit::clear_clipboards(s);
     s.state.key_clipboard = clip;
     s.state.clip_is_keys = true;
     Ok(json!(n))
@@ -130,8 +131,44 @@ fn paste(s: &mut Session, p: &Value) -> Result<Value> {
             retime_roving(&mut pr.keys, pr.spatial);
         }
         st.selected_keys = sel;
+        st.keys_selected_directly = true;
         Ok(json!(st.selected_keys.len()))
     })
+}
+
+/// Select all properties' keys on one composition frame, including collapsed properties.
+fn select_at_time(s: &mut Session, p: &Value) -> Result<Value> {
+    let (cid, layers) = layers_p(s, p)?;
+    if layers.is_empty() {
+        return Err(bad("keys.selectAtTime", "select a layer first"));
+    }
+    let comp = s.project.comp(cid).ok_or(EngineError::NoComp)?;
+    let at = comp.frame_rate.snap_nearest(time_p(s, p, Some(comp)));
+    let mut keys = Vec::new();
+    for lid in layers {
+        let Some(layer) = comp.layer(lid).filter(|l| !l.switches.locked) else { continue };
+        layer.props.walk("", &mut |_, prop| {
+            for key in &prop.keys {
+                if comp.frame_rate.snap_nearest(layer.comp_time(key.time)) == at {
+                    keys.push(crate::KeyRef { layer: lid, prop: prop.uid, time: key.time });
+                }
+            }
+        });
+    }
+    s.state.selected_keys = keys;
+    s.state.keys_selected_directly = !s.state.selected_keys.is_empty();
+    s.state.selected_props.clear();
+    for key in &s.state.selected_keys {
+        if !s.state.selected_props.contains(&(key.layer, key.prop)) {
+            s.state.selected_props.push((key.layer, key.prop));
+        }
+    }
+    if !s.state.selected_keys.is_empty() {
+        s.state.selected_layers = s.state.selected_props.iter().map(|(layer, _)| *layer).collect();
+        s.state.selected_layers.sort();
+        s.state.selected_layers.dedup();
+    }
+    Ok(json!(s.state.selected_keys.len()))
 }
 
 /// Select every keyframe of the selected properties, or of the given / selected layers.
@@ -163,6 +200,7 @@ fn select_all(s: &mut Session, p: &Value) -> Result<Value> {
     // Keys of locked layers can't be selected.
     sel.retain(|k| comp.layer(k.layer).is_some_and(|l| !l.switches.locked));
     s.state.selected_keys = sel;
+    s.state.keys_selected_directly = !s.state.selected_keys.is_empty();
     Ok(json!(s.state.selected_keys.len()))
 }
 
@@ -192,6 +230,7 @@ fn select_related(s: &mut Session, which: &str) -> Result<Value> {
         }
     }
     s.state.selected_keys = sel;
+    s.state.keys_selected_directly = !s.state.selected_keys.is_empty();
     Ok(json!(s.state.selected_keys.len()))
 }
 
@@ -431,6 +470,7 @@ fn keys_or_layers(s: &Session) -> std::result::Result<(), String> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
+        cmd!("keys.selectAtTime", "Select Keyframes at Current Time", [], None, "{layers?, time?: comp seconds, frame?: comp frame}", has_comp, select_at_time),
         cmd!("keys.copy", "Copy Keyframes", [], None, "{}", has_keys, copy),
         cmd!("keys.paste", "Paste Keyframes", [], None, "{layers?, prop?|path?, time?}", has_key_clip, paste),
         cmd!(

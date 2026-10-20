@@ -256,6 +256,7 @@ fn layer_drag_snaps_to_comp_centre_and_ctrl_disables() {
 #[test]
 fn layer_drag_snaps_to_other_layers_edges_ctrl_toggles_and_options_apply() {
     let mut h = harness();
+    h.state_mut().session.execute("view.snapping", json!({"value": true})).unwrap();
     let box_id = h.state().session.active_comp().unwrap().layers[0].id;
     // A 100×100 target at x 450–550, y 50–150.
     let target = h.state_mut().session.execute("layer.newSolid", json!({"name": "Target", "color": "#20e040", "width": 100, "height": 100})).unwrap()["layer"]
@@ -1864,7 +1865,6 @@ fn full_resolution_frames_wider_than_the_texture_limit_fit() {
     assert!(full(&mut h), "the full-size frame is shown (and stays readable): {:?}", h.state().ui.viewer.res);
     assert_eq!(h.state().viewer_texture_size(), Some([800, 134]), "2400×400 averaged by 3");
 }
-
 
 /// #553: the Pen slot's tools work on a motion path as in After Effects: Add Vertex (and the
 /// Pen) add a keyframe where the path is clicked, Convert Vertex switches a keyframe between

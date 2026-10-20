@@ -206,6 +206,9 @@ pub struct EditorState {
     /// Selected properties / groups (by uid) of selected layers.
     pub selected_props: Vec<(LayerId, Uid)>,
     pub selected_keys: Vec<KeyRef>,
+    /// Keys were selected directly, rather than through a property/group selection.
+    #[serde(default)]
+    pub keys_selected_directly: bool,
     pub project_selection: Vec<ItemId>,
     /// Layer clipboard (serialized layers) and keyframe clipboard.
     #[serde(skip)]
@@ -518,7 +521,7 @@ impl Default for Session {
             revision: 0,
             saved_revision: 0,
             path: None,
-            state: EditorState { snapping: true, view_layout: 1, ..Default::default() },
+            state: EditorState { snapping: false, view_layout: 1, ..Default::default() },
             services: Arc::new(FsServices),
             footage: Arc::new(NoFootage),
             expr: None,
@@ -995,7 +998,7 @@ impl Session {
         let legacy_features = feature_policy::project_uses_legacy_features(&p);
         self.project = Arc::new(p);
         self.history = History::default();
-        self.state = EditorState { snapping: true, view_layout: 1, ..Default::default() };
+        self.state = EditorState { snapping: false, view_layout: 1, ..Default::default() };
         self.path = path;
         self.bump();
         self.mark_saved();
@@ -1115,6 +1118,8 @@ mod tests_tail;
 mod tests_text;
 #[cfg(test)]
 mod tests_text_edit;
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod tests_timeline;
 #[cfg(test)]

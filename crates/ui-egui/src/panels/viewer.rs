@@ -549,7 +549,7 @@ fn aux_views(
         p.rect_filled(r, 0.0, bg);
         let fit = ((r.width() - 20.0) / cw).min((r.height() - 20.0) / ch).max(0.01);
         let cr = Rect::from_center_size(r.center(), vec2(cw * fit, ch * fit));
-        let scale = (fit * ctx.pixels_per_point()).min(1.0) as f64;
+        let scale = app.ui.viewer.res.scale(fit, ctx.pixels_per_point());
         let cam = views.cam(v, comp.width as f64, comp.height as f64).state();
         let key = {
             use std::hash::{Hash, Hasher};
@@ -602,7 +602,7 @@ fn locked_pane(app: &mut EffectcraftApp, ui: &mut egui::Ui, full: Rect, bg: Colo
     let (cw, ch) = (comp.width as f32, comp.height as f32);
     let fit = ((r.width() - 20.0) / cw).min((r.height() - 44.0) / ch).max(0.01);
     let cr = Rect::from_center_size(r.center(), vec2(cw * fit, ch * fit));
-    let scale = (fit * ctx.pixels_per_point()).min(1.0) as f64;
+    let scale = app.ui.viewer.res.scale(fit, ctx.pixels_per_point());
     let t = app.session.time_of(lv.comp);
     let cam = (lv.view != View3D::ActiveCamera && comp.has_3d())
         .then(|| app.session.state.views3d.get(&lv.comp).cloned().unwrap_or_default().cam(lv.view, comp.width as f64, comp.height as f64).state());

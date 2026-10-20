@@ -482,7 +482,7 @@ pub fn layer_or_self(ctx: &crate::EffectCtx, b: &crate::Buf, id: &str, masks_and
 }
 
 /// A stable hash of an effect instance's evaluated parameters, seed, layer size and buffer
-/// scale (cache key for simulations).
+/// scale (cache key for effect calculations).
 pub fn params_key(ctx: &crate::EffectCtx, b: &crate::Buf, salt: u64) -> u64 {
     params_key_except(ctx, b, salt, &[])
 }
@@ -504,97 +504,6 @@ pub fn params_key_except(ctx: &crate::EffectCtx, b: &crate::Buf, salt: u64, skip
     b.scale.to_bits().hash(&mut h);
     salt.hash(&mut h);
     h.finish()
-}
-
-/// Checkpointed, deterministic, time-seekable simulation cache.
-///
-/// A simulation is a state advanced in fixed steps from layer time 0. [`SimCache::run`] returns
-/// the state after `target` steps, starting from the nearest cached checkpoint at or before it
-/// (so scrubbing forward is incremental and seeking anywhere gives the same answer as
-/// simulating from scratch). Entries are keyed by [`params_key`]; the least recently used key
-/// is evicted beyond `cap` keys.
-pub struct SimCache<S> {
-    inner: std::sync::Mutex<Vec<SimEntry<S>>>,
-    cap: usize,
-}
-
-struct SimEntry<S> {
-    key: u64,
-    used: u64,
-    checkpoints: Vec<(u64, std::sync::Arc<S>)>,
-}
-
-/// Checkpoint every this many steps.
-pub const SIM_CHECKPOINT: u64 = 15;
-
-impl<S: Clone> SimCache<S> {
-    pub const fn new(cap: usize) -> SimCache<S> {
-        SimCache { inner: std::sync::Mutex::new(Vec::new()), cap }
-    }
-
-    /// State after `target` steps. `init` builds step 0; `step(state, i)` advances from step
-    /// `i` to `i + 1`.
-    pub fn run(&self, key: u64, target: u64, init: impl FnOnce() -> S, mut step: impl FnMut(&mut S, u64)) -> std::sync::Arc<S> {
-        use std::sync::Arc;
-        let start = {
-            let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-            let tick = g.iter().map(|e| e.used).max().unwrap_or(0) + 1;
-            g.iter_mut().find(|e| e.key == key).and_then(|e| {
-                e.used = tick;
-                e.checkpoints.iter().filter(|(s, _)| *s <= target).max_by_key(|(s, _)| *s).map(|(s, st)| (*s, st.clone()))
-            })
-        };
-        let had_start = start.is_some();
-        let (mut i, mut st) = match start {
-            Some((s, st)) if s == target => return st,
-            Some((s, st)) => (s, (*st).clone()),
-            None => (0, init()),
-        };
-        let mut fresh: Vec<(u64, Arc<S>)> = Vec::new();
-        if !had_start {
-            fresh.push((0, Arc::new(st.clone())));
-        }
-        while i < target {
-            step(&mut st, i);
-            i += 1;
-            if i % SIM_CHECKPOINT == 0 && i != target {
-                fresh.push((i, Arc::new(st.clone())));
-            }
-        }
-        let out = Arc::new(st);
-        fresh.push((target, out.clone()));
-        let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        let tick = g.iter().map(|e| e.used).max().unwrap_or(0) + 1;
-        let idx = match g.iter().position(|e| e.key == key) {
-            Some(ix) => ix,
-            None => {
-                if g.len() >= self.cap.max(1) {
-                    let old = g.iter().enumerate().min_by_key(|(_, e)| e.used).map(|(ix, _)| ix).unwrap_or(0);
-                    g.remove(old);
-                }
-                g.push(SimEntry { key, used: tick, checkpoints: Vec::new() });
-                g.len() - 1
-            }
-        };
-        let e = &mut g[idx];
-        e.used = tick;
-        for (s, st) in fresh {
-            if !e.checkpoints.iter().any(|(c, _)| *c == s) {
-                e.checkpoints.push((s, st));
-            }
-        }
-        // Keep memory bounded: drop unaligned (exact-target) checkpoints first, then thin.
-        if e.checkpoints.len() > 256 {
-            e.checkpoints.retain(|(s, _)| s % SIM_CHECKPOINT == 0);
-            e.checkpoints.sort_by_key(|(s, _)| *s);
-            let mut k = 0;
-            e.checkpoints.retain(|_| {
-                k += 1;
-                k % 2 == 1
-            });
-        }
-        out
-    }
 }
 
 /// 1D squared-distance transform of sampled function `f` (Felzenszwalb & Huttenlocher 2012;
@@ -752,22 +661,6 @@ pub fn poly_point_at(pts: &[[f64; 2]], closed: bool, s: f64) -> ([f64; 2], [f64;
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn sim_cache_is_seek_consistent() {
-        static C: SimCache<u64> = SimCache::new(2);
-        let step = |s: &mut u64, i: u64| *s = s.wrapping_mul(6364136223846793005).wrapping_add(i);
-        let direct = *C.run(1, 100, || 7, step);
-        let fresh: SimCache<u64> = SimCache::new(2);
-        let a = *fresh.run(1, 40, || 7, step);
-        let b = *fresh.run(1, 100, || 7, step);
-        let c = *fresh.run(1, 40, || 7, step);
-        let d = *fresh.run(1, 77, || 7, step);
-        let e = *C.run(1, 77, || 7, step);
-        assert_eq!(b, direct);
-        assert_eq!(a, c);
-        assert_eq!(d, e);
-    }
 
     #[test]
     fn poly_helpers() {

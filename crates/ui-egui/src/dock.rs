@@ -44,8 +44,9 @@ pub enum PanelKind {
     Viewer(u32),
     LumetriScopes,
     Footage,
+    // Read old Metadata tabs as a retired panel so saved layouts can remove them.
+    #[serde(alias = "Metadata")]
     MediaBrowser,
-    Metadata,
     Progress,
     ContentAwareFill,
     /// Window ▸ Create Nulls From Paths (our own panel).
@@ -55,7 +56,7 @@ pub enum PanelKind {
 }
 
 impl PanelKind {
-    pub const ALL: [PanelKind; 29] = [
+    pub const ALL: [PanelKind; 28] = [
         PanelKind::Project,
         PanelKind::EffectControls,
         PanelKind::Composition,
@@ -82,7 +83,6 @@ impl PanelKind {
         PanelKind::EssentialGraphics,
         PanelKind::LumetriScopes,
         PanelKind::Footage,
-        PanelKind::Metadata,
         PanelKind::Progress,
         PanelKind::CreateNullsFromPaths,
     ];
@@ -122,7 +122,6 @@ impl PanelKind {
             PanelKind::LumetriScopes => "Lumetri Scopes",
             PanelKind::Footage => "Footage",
             PanelKind::MediaBrowser => "Media Browser",
-            PanelKind::Metadata => "Metadata",
             PanelKind::Progress => "Progress",
             PanelKind::ContentAwareFill => "Content-Aware Fill",
             PanelKind::CreateNullsFromPaths => "Create Nulls From Paths",
@@ -397,7 +396,7 @@ pub fn workspace(name: &str) -> DockNode {
             Ratio(0.55),
             hsplit(
                 FixedA(300.0),
-                tabs(&[Project, EffectControls, Flowchart, History, Metadata], 0),
+                tabs(&[Project, EffectControls, Flowchart, History], 0),
                 hsplit(
                     FixedB(300.0),
                     tabs(&[Composition, Layer, Footage], 0),

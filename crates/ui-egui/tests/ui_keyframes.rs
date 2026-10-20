@@ -398,3 +398,28 @@ fn properties_panel_edits_every_selected_layer() {
         assert!((a - b - d).abs() < 1e-6, "same change on every layer: {before:?} → {after:?}");
     }
 }
+
+#[test]
+fn grouped_position_and_scale_use_the_native_clipboard_events() {
+    let (mut h, id, _) = harness();
+    for path in ["transform/position", "transform/scale"] {
+        h.state_mut().session.execute("prop.addKey", json!({"layer": id.0, "path": path, "time": 1.0 / 30.0, "value": [60, 70, 80]})).unwrap();
+    }
+    h.state_mut().session.execute("keys.selectAtTime", json!({"layers": [id.0], "frame": 1})).unwrap();
+    h.state_mut().ui.focused = effectcraft_ui_egui::dock::PanelKind::Timeline;
+    h.input_mut().events.push(Event::Copy);
+    h.step();
+    assert_eq!(h.state().session.state.key_clipboard.len(), 2);
+    h.state_mut().session.execute("time.set", json!({"frame": 10})).unwrap();
+    h.input_mut().events.push(Event::Paste("EffectCraft: 2 keyframes".into()));
+    h.run_steps(2);
+    let comp = h.state().session.active_comp().unwrap();
+    let layer = comp.layer(id).unwrap();
+    for path in ["transform/position", "transform/scale"] {
+        let prop = layer.props.prop(path).unwrap();
+        assert_eq!(prop.keys.len(), 2);
+        assert_eq!(prop.keys[1].time, comp.frame_rate.tick_of(10));
+        assert_eq!(prop.keys[0].value, prop.keys[1].value);
+    }
+    assert_eq!(layer.props.prop("transform/opacity").unwrap().keys.len(), 2);
+}

@@ -315,26 +315,7 @@ Effects are addressed by id (`ec.<category>.<name>`) or display name in commands
 
 ## Simulation
 
-| Effect | Id | Params | GPU | 32 | Status |
-|---|---|---:|:-:|:-:|---|
-| CC Ball Action | `ec.sim.ccballaction` | 8 | GPU | 32 | Implemented |
-| CC Bubbles | `ec.sim.ccbubbles` | 7 | GPU | 32 | Implemented |
-| CC Drizzle | `ec.sim.ccdrizzle` | 14 | GPU | 32 | Implemented |
-| CC Hair | `ec.sim.cchair` | 20 | GPU | 32 | Implemented |
-| CC Mr. Mercury | `ec.sim.ccmrmercury` | 23 | GPU | 32 | Implemented |
-| CC Particle Systems II | `ec.sim.ccparticlesystems2` | 21 | GPU | 32 | Implemented |
-| CC Particle World | `ec.sim.ccparticleworld` | 35 | GPU | 32 | Implemented |
-| CC Pixel Polly | `ec.sim.ccpixelpolly` | 10 | GPU | 32 | Implemented |
-| CC Rainfall | `ec.sim.ccrainfall` | 14 | GPU | 32 | Implemented |
-| CC Scatterize | `ec.sim.ccscatterize` | 4 | GPU | 32 | Implemented |
-| CC Snowfall | `ec.sim.ccsnowfall` | 19 | GPU | 32 | Implemented |
-| CC Star Burst | `ec.sim.ccstarburst` | 6 | GPU | 32 | Implemented |
-| Card Dance | `ec.sim.carddance` | 53 | GPU | 32 | Implemented |
-| Caustics | `ec.sim.caustics` | 28 | GPU | 32 | Implemented |
-| Foam | `ec.sim.foam` | 36 | GPU | 32 | Implemented |
-| Particle Playground | `ec.sim.particleplayground` | 92 | GPU | 32 | Implemented |
-| Shatter | `ec.sim.shatter` | 60 | GPU | 32 | Implemented |
-| Wave World | `ec.sim.waveworld` | 35 | GPU | 32 | Implemented |
+Removed from Toon Edition, including CPU/GPU implementations and particle caches.
 
 ## Stylize
 

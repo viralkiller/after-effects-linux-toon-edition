@@ -4,7 +4,7 @@
 //! Play From, Frame Rate, Skip, Resolution, Full Screen, "If caching, play cached frames" and
 //! "Move time to preview time".
 //!
-//! The settings live in [`crate::prefs::Prefs::preview`] (saved with the other settings).
+//! The settings live in [`effectcraft_project::Project::preview`] (saved in the project).
 //! [`plan`] turns one shortcut's options, a comp and the current time into the frames to play;
 //! the frontend's playback loop follows the plan.
 //!
@@ -13,273 +13,12 @@
 
 use effectcraft_project::Comp;
 use effectcraft_time::Tick;
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::commands::{CommandSpec, always, bad, str_p};
 use crate::{Result, Session, cmd, query};
 
-/// A Preview panel shortcut.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum PreviewShortcut {
-    #[default]
-    Spacebar,
-    ShiftSpacebar,
-    Numpad0,
-    ShiftNumpad0,
-    AltNumpad0,
-}
-
-impl PreviewShortcut {
-    pub const ALL: [PreviewShortcut; 5] = [Self::Spacebar, Self::ShiftSpacebar, Self::Numpad0, Self::ShiftNumpad0, Self::AltNumpad0];
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Spacebar => "Spacebar",
-            Self::ShiftSpacebar => "Shift+Spacebar",
-            Self::Numpad0 => "Numpad 0",
-            Self::ShiftNumpad0 => "Shift+Numpad 0",
-            Self::AltNumpad0 => "Alt+Numpad 0",
-        }
-    }
-    pub fn id(self) -> &'static str {
-        match self {
-            Self::Spacebar => "spacebar",
-            Self::ShiftSpacebar => "shiftSpacebar",
-            Self::Numpad0 => "numpad0",
-            Self::ShiftNumpad0 => "shiftNumpad0",
-            Self::AltNumpad0 => "altNumpad0",
-        }
-    }
-    /// From an id (`shiftSpacebar`) or a label (`Shift+Spacebar`).
-    pub fn parse(s: &str) -> Option<Self> {
-        let k = s.to_ascii_lowercase().replace([' ', '+', '-', '_'], "");
-        Self::ALL.into_iter().find(|x| x.id().to_ascii_lowercase() == k || x.label().to_ascii_lowercase().replace([' ', '+'], "") == k)
-    }
-}
-
-/// Range of a preview.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum PreviewRange {
-    WorkArea,
-    #[default]
-    WorkAreaExtended,
-    EntireDuration,
-    /// The pre-roll before and post-roll after the current time.
-    AroundCurrentTime,
-}
-
-impl PreviewRange {
-    pub const ALL: [PreviewRange; 4] = [Self::WorkArea, Self::WorkAreaExtended, Self::EntireDuration, Self::AroundCurrentTime];
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::WorkArea => "Work Area",
-            Self::WorkAreaExtended => "Work Area Extended By Current Time",
-            Self::EntireDuration => "Entire Duration",
-            Self::AroundCurrentTime => "Play Around Current Time",
-        }
-    }
-}
-
-/// Where playback starts.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum PlayFrom {
-    RangeStart,
-    #[default]
-    CurrentTime,
-}
-
-impl PlayFrom {
-    pub const ALL: [PlayFrom; 2] = [Self::RangeStart, Self::CurrentTime];
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::RangeStart => "Range Start",
-            Self::CurrentTime => "Current Time",
-        }
-    }
-}
-
-/// Resolution of a preview (Auto: the viewer's own).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum PreviewResolution {
-    #[default]
-    Auto,
-    Full,
-    Half,
-    Third,
-    Quarter,
-    /// Every n-th pixel ([`PreviewPreset::custom_resolution`]).
-    Custom,
-}
-
-impl PreviewResolution {
-    pub const ALL: [PreviewResolution; 6] = [Self::Auto, Self::Full, Self::Half, Self::Third, Self::Quarter, Self::Custom];
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Auto => "Auto",
-            Self::Full => "Full",
-            Self::Half => "Half",
-            Self::Third => "Third",
-            Self::Quarter => "Quarter",
-            Self::Custom => "Custom",
-        }
-    }
-    /// Pixel step (1 Full … 4 Quarter, `custom` for Custom); `None` for Auto.
-    pub fn factor(self, custom: u32) -> Option<u32> {
-        match self {
-            Self::Auto => None,
-            Self::Full => Some(1),
-            Self::Half => Some(2),
-            Self::Third => Some(3),
-            Self::Quarter => Some(4),
-            Self::Custom => Some(custom.clamp(1, 40)),
-        }
-    }
-}
-
-/// The options of one shortcut.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-pub struct PreviewPreset {
-    pub include_video: bool,
-    pub include_audio: bool,
-    /// Grids, guides and safe margins stay visible while playing.
-    pub include_overlays: bool,
-    /// Layer handles, paths and motion paths stay visible while playing.
-    pub include_layer_controls: bool,
-    #[serde(rename = "loop")]
-    pub loop_: bool,
-    /// Render the whole range before playing it.
-    pub cache_before_playback: bool,
-    pub range: PreviewRange,
-    /// Play Around Current Time: seconds before and after the current time.
-    pub pre_roll: f64,
-    pub post_roll: f64,
-    pub play_from: PlayFrom,
-    /// Frames per second; `None` = Auto (the comp's rate).
-    pub frame_rate: Option<f64>,
-    /// Frames skipped between the frames played (0 = every frame).
-    pub skip: u32,
-    pub resolution: PreviewResolution,
-    /// Custom resolution: render every n-th pixel (1–40).
-    pub custom_resolution: u32,
-    /// Play in a full-screen viewer.
-    pub full_screen: bool,
-    /// With Cache Before Playback, pressing the shortcut again while caching plays the frames
-    /// already cached.
-    pub play_cached_frames: bool,
-    /// When the preview stops, the current time moves to the last frame shown (off: it returns
-    /// to where the preview started).
-    pub move_time_to_preview_time: bool,
-}
-
-impl Default for PreviewPreset {
-    fn default() -> Self {
-        PreviewPreset {
-            include_video: true,
-            include_audio: true,
-            include_overlays: true,
-            include_layer_controls: false,
-            loop_: true,
-            cache_before_playback: false,
-            range: PreviewRange::WorkAreaExtended,
-            pre_roll: 2.0,
-            post_roll: 2.0,
-            play_from: PlayFrom::CurrentTime,
-            frame_rate: None,
-            skip: 0,
-            resolution: PreviewResolution::Auto,
-            custom_resolution: 2,
-            full_screen: false,
-            play_cached_frames: true,
-            move_time_to_preview_time: true,
-        }
-    }
-}
-
-impl PreviewPreset {
-    /// The factory options of a shortcut.
-    pub fn default_for(s: PreviewShortcut) -> Self {
-        let d = PreviewPreset::default();
-        match s {
-            PreviewShortcut::Spacebar => d,
-            // A lighter preview: every other frame.
-            PreviewShortcut::ShiftSpacebar => PreviewPreset { skip: 1, ..d },
-            PreviewShortcut::Numpad0 => PreviewPreset { range: PreviewRange::WorkArea, play_from: PlayFrom::RangeStart, ..d },
-            PreviewShortcut::ShiftNumpad0 => {
-                PreviewPreset { range: PreviewRange::WorkArea, play_from: PlayFrom::RangeStart, skip: 1, resolution: PreviewResolution::Half, ..d }
-            }
-            // Audio only.
-            PreviewShortcut::AltNumpad0 => PreviewPreset { include_video: false, range: PreviewRange::WorkArea, play_from: PlayFrom::RangeStart, ..d },
-        }
-    }
-
-    fn normalize(&mut self) {
-        self.pre_roll = if self.pre_roll.is_finite() { self.pre_roll.clamp(0.0, 3600.0) } else { 2.0 };
-        self.post_roll = if self.post_roll.is_finite() { self.post_roll.clamp(0.0, 3600.0) } else { 2.0 };
-        self.frame_rate = self.frame_rate.filter(|r| r.is_finite() && *r > 0.0).map(|r| r.clamp(0.01, 999.0));
-        self.skip = self.skip.min(99);
-        self.custom_resolution = self.custom_resolution.clamp(1, 40);
-        if !self.include_video && !self.include_audio {
-            self.include_video = true;
-        }
-    }
-}
-
-/// The Preview panel: the shortcut shown in the panel and every shortcut's options.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-pub struct PreviewSettings {
-    /// The shortcut whose options the panel shows (and the play button uses).
-    pub current: PreviewShortcut,
-    pub spacebar: PreviewPreset,
-    pub shift_spacebar: PreviewPreset,
-    pub numpad0: PreviewPreset,
-    pub shift_numpad0: PreviewPreset,
-    pub alt_numpad0: PreviewPreset,
-}
-
-impl Default for PreviewSettings {
-    fn default() -> Self {
-        use PreviewShortcut as S;
-        PreviewSettings {
-            current: S::Spacebar,
-            spacebar: PreviewPreset::default_for(S::Spacebar),
-            shift_spacebar: PreviewPreset::default_for(S::ShiftSpacebar),
-            numpad0: PreviewPreset::default_for(S::Numpad0),
-            shift_numpad0: PreviewPreset::default_for(S::ShiftNumpad0),
-            alt_numpad0: PreviewPreset::default_for(S::AltNumpad0),
-        }
-    }
-}
-
-impl PreviewSettings {
-    pub fn get(&self, s: PreviewShortcut) -> &PreviewPreset {
-        match s {
-            PreviewShortcut::Spacebar => &self.spacebar,
-            PreviewShortcut::ShiftSpacebar => &self.shift_spacebar,
-            PreviewShortcut::Numpad0 => &self.numpad0,
-            PreviewShortcut::ShiftNumpad0 => &self.shift_numpad0,
-            PreviewShortcut::AltNumpad0 => &self.alt_numpad0,
-        }
-    }
-    pub fn get_mut(&mut self, s: PreviewShortcut) -> &mut PreviewPreset {
-        match s {
-            PreviewShortcut::Spacebar => &mut self.spacebar,
-            PreviewShortcut::ShiftSpacebar => &mut self.shift_spacebar,
-            PreviewShortcut::Numpad0 => &mut self.numpad0,
-            PreviewShortcut::ShiftNumpad0 => &mut self.shift_numpad0,
-            PreviewShortcut::AltNumpad0 => &mut self.alt_numpad0,
-        }
-    }
-    /// The options of the shortcut shown in the panel.
-    pub fn active(&self) -> &PreviewPreset {
-        self.get(self.current)
-    }
-}
+pub use effectcraft_project::preview::{PlayFrom, PreviewPreset, PreviewRange, PreviewResolution, PreviewSettings, PreviewShortcut};
 
 /// What a preview plays: frames `start..=end` (comp frames), starting at `first`, every
 /// `step`-th frame, `fps` frames shown per second.
@@ -371,17 +110,17 @@ fn shortcut_p(s: &Session, p: &Value, cmd: &str) -> Result<PreviewShortcut> {
         Some(k) => {
             PreviewShortcut::parse(k).ok_or_else(|| bad(cmd, format!("unknown shortcut `{k}` (spacebar|shiftSpacebar|numpad0|shiftNumpad0|altNumpad0)")))
         }
-        None => Ok(s.prefs.preview.current),
+        None => Ok(s.project.preview.current),
     }
 }
 
 fn get(s: &mut Session, p: &Value) -> Result<Value> {
     let sc = shortcut_p(s, p, "playback.settings.get")?;
-    let mut out = serde_json::to_value(s.prefs.preview.get(sc)).map_err(|e| bad("playback.settings.get", e.to_string()))?;
+    let mut out = serde_json::to_value(s.project.preview.get(sc)).map_err(|e| bad("playback.settings.get", e.to_string()))?;
     out["shortcut"] = json!(sc.id());
-    out["current"] = json!(s.prefs.preview.current.id());
+    out["current"] = json!(s.project.preview.current.id());
     if let Some(c) = s.active_comp() {
-        let pl = plan(s.prefs.preview.get(sc), c, s.time());
+        let pl = plan(s.project.preview.get(sc), c, s.time());
         out["plan"] = json!({"start": pl.start, "end": pl.end, "first": pl.first, "step": pl.step, "fps": pl.fps});
     }
     Ok(out)
@@ -401,7 +140,7 @@ fn set(s: &mut Session, p: &Value) -> Result<Value> {
             }
         }
     }
-    let mut next = s.prefs.preview.clone();
+    let mut next = s.project.preview.clone();
     if p.get("reset").and_then(Value::as_bool) == Some(true) {
         *next.get_mut(sc) = PreviewPreset::default_for(sc);
     }
@@ -423,8 +162,10 @@ fn set(s: &mut Session, p: &Value) -> Result<Value> {
         // `{shortcut}` alone shows that shortcut in the panel.
         next.current = sc;
     }
-    s.prefs.preview = next;
-    s.save_prefs();
+    s.edit("Preview Settings", None, |project, _| {
+        project.preview = next;
+        Ok(())
+    })?;
     get(s, &json!({"shortcut": sc.id()}))
 }
 
@@ -457,6 +198,22 @@ mod tests {
         let mut s = Session::default();
         s.execute("comp.new", json!({"name": "C", "width": 320, "height": 180, "frameRate": 24, "duration": 10})).unwrap();
         s
+    }
+
+    #[test]
+    fn toon_defaults_reset_snapping_and_preserve_project_preview() {
+        let mut s = Session::default();
+        assert!(!s.state.snapping);
+        s.execute("view.snapping", json!({"value": true})).unwrap();
+        s.mark_saved();
+        s.execute("playback.settings.set", json!({"resolution": "quarter"})).unwrap();
+        assert!(s.is_dirty());
+        let saved = effectcraft_project::Project::from_json(&s.project.to_json()).unwrap();
+        s.replace_project(effectcraft_project::Project::default(), None);
+        assert!(!s.state.snapping);
+        assert_eq!(s.project.preview.spacebar.resolution, PreviewResolution::Half);
+        s.replace_project(saved, None);
+        assert_eq!(s.project.preview.spacebar.resolution, PreviewResolution::Quarter);
     }
 
     #[test]
@@ -527,17 +284,17 @@ mod tests {
         assert_eq!(sp["frameRate"], Value::Null);
         // Auto rate, panel shortcut, reset.
         s.execute("playback.settings.set", json!({"shortcut": "shiftNumpad0", "frameRate": "auto", "current": "shiftNumpad0"})).unwrap();
-        assert_eq!(s.prefs.preview.current, PreviewShortcut::ShiftNumpad0);
-        assert_eq!(s.prefs.preview.shift_numpad0.frame_rate, None);
+        assert_eq!(s.project.preview.current, PreviewShortcut::ShiftNumpad0);
+        assert_eq!(s.project.preview.shift_numpad0.frame_rate, None);
         assert!(s.execute("playback.settings.set", json!({"bogus": 1})).is_err());
         assert!(s.execute("playback.settings.set", json!({"shortcut": "f13"})).is_err());
         s.execute("playback.settings.set", json!({"shortcut": "shiftNumpad0", "reset": true})).unwrap();
-        assert_eq!(s.prefs.preview.shift_numpad0, PreviewPreset::default_for(PreviewShortcut::ShiftNumpad0));
+        assert_eq!(s.project.preview.shift_numpad0, PreviewPreset::default_for(PreviewShortcut::ShiftNumpad0));
         // Persisted with the settings.
-        let v: Value = serde_json::from_str(&s.prefs.to_json()).unwrap();
+        let v: Value = serde_json::from_str(&s.project.to_json()).unwrap();
         assert_eq!(v["preview"]["current"], "shiftNumpad0");
-        let back: crate::prefs::Prefs = serde_json::from_value(v).unwrap();
-        assert_eq!(back.preview, s.prefs.preview);
+        let back: effectcraft_project::Project = serde_json::from_value(v).unwrap();
+        assert_eq!(back.preview, s.project.preview);
     }
 
     #[test]

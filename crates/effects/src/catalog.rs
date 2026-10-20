@@ -48,11 +48,8 @@ pub fn param_shown(effect: &str, param: &str, value: &dyn Fn(&str) -> Option<eff
             }
             None => true,
         },
-        "ec.sim.carddance" | "ec.transition.cardwipe" => crate::card3d::shown(param, &e).unwrap_or(true),
-        "ec.sim.shatter" => match param {
-            "shape/customShatterMap" | "shape/whiteTilesFixed" => e("shape/pattern") == 5,
-            _ => crate::card3d::shown(param, &e).unwrap_or(true),
-        },
+        "ec.transition.cardwipe" => crate::card3d::shown(param, &e).unwrap_or(true),
+
         _ => {
             let _ = b("");
             true
@@ -223,10 +220,7 @@ mod tests {
         assert!(shown("ec.color.huesaturation", "bluesHue", &[("channelControl", 5)]));
         assert!(!shown("ec.color.huesaturation", "redsHue", &[("channelControl", 5)]));
         // Card effects: the camera system's group.
-        assert!(shown("ec.sim.carddance", "cameraPosition", &[]));
-        assert!(!shown("ec.sim.carddance", "cornerPins", &[]));
         assert!(shown("ec.transition.cardwipe", "cornerPins/upperLeftCorner", &[("cameraSystem", 1)]));
-        assert!(!shown("ec.sim.shatter", "shape/customShatterMap", &[]));
         // Selective Color: the chosen range's Details group.
         assert!(shown("ec.color.selectivecolor", "details/reds", &[]));
         assert!(!shown("ec.color.selectivecolor", "details/blues/bluesCyan", &[]));

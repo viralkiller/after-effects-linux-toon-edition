@@ -619,6 +619,7 @@ fn select_prop(s: &mut Session, p: &Value) -> Result<Value> {
         s.state.selected_layers = vec![lid];
     }
     s.state.selected_props.push((lid, uid));
+    s.state.keys_selected_directly = false;
     // Selecting a mask (or its Mask Path, or a shape's Path) selects all its points, so the
     // viewer drags the whole mask (as in AE, #203).
     let t = s.time();
@@ -726,6 +727,7 @@ fn select_keys(s: &mut Session, p: &Value) -> Result<Value> {
     } else {
         s.state.selected_keys = sel;
     }
+    s.state.keys_selected_directly = !s.state.selected_keys.is_empty();
     // From the Timeline, selected keys select their properties and layers too, as in After
     // Effects, so the Graph Editor shows them (#252).
     if b_p(p, "selectProperties").unwrap_or(false) && !s.state.selected_keys.is_empty() {

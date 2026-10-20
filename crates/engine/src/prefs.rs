@@ -389,7 +389,7 @@ pub struct Prefs {
     pub recent_presets: Vec<String>,
     /// Character panel: recently used font families, newest first.
     pub recent_fonts: Vec<String>,
-    /// Preview panel: every shortcut's options.
+    /// Legacy global preview options; active options now live in each project.
     pub preview: crate::preview::PreviewSettings,
     /// View ▸ Simulate Output ▸ My Custom RGB.
     pub custom_rgb: crate::viewer::CustomRgb,

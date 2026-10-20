@@ -1,4 +1,4 @@
-//! Small immediate-mode controls shared by the Lumetri Scopes, Footage, Media Browser, Metadata,
+//! Small immediate-mode controls shared by the Lumetri Scopes, Footage, Media Browser,
 //! Progress and Content-Aware Fill panels. Each registers its automation id.
 
 use egui::{Align2, Rect, pos2, vec2};

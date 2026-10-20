@@ -883,3 +883,73 @@ fn property_edits_apply_to_every_selected_layer() {
     s.execute("prop.set", json!({"layer": a, "path": "transform/rotation", "value": 30})).unwrap();
     assert_eq!(prop(&s, b, "transform/rotation").value.as_f64(), 0.0);
 }
+
+#[test]
+fn grouped_transform_keys_copy_exact_selection_and_paste_as_one_edit() {
+    let (mut s, layer) = setup();
+    for path in ["transform/position", "transform/scale"] {
+        animate(&mut s, layer, path, &[(1.0 / 30.0, json!([80, 90, 100])), (1.0, json!([120, 130, 140]))]);
+    }
+    animate(&mut s, layer, "transform/opacity", &[(0.0, json!(30)), (1.0, json!(90))]);
+    assert_eq!(s.execute("keys.selectAtTime", json!({"layers": [layer], "frame": 1})).unwrap(), json!(2));
+    // A stale highlighted property must not add its other keys to this selection.
+    let opacity = prop(&s, layer, "transform/opacity").uid;
+    s.state.selected_props.push((effectcraft_project::LayerId(layer), opacity));
+    s.state.value_clipboard.push(("transform/rotation".into(), KV::Scalar(50.0)));
+    assert_eq!(s.execute("edit.copy", json!({})).unwrap(), json!(2));
+    assert!(s.state.value_clipboard.is_empty());
+    assert_eq!(s.state.key_clipboard.len(), 2);
+    s.execute("time.set", json!({"frame": 10})).unwrap();
+    let before = s.history.undo.len();
+    assert_eq!(s.execute("edit.paste", json!({})).unwrap(), json!(2));
+    assert_eq!(s.history.undo.len(), before + 1);
+    let check = |s: &Session, expected: usize| {
+        for path in ["transform/position", "transform/scale"] {
+            let pr = prop(s, layer, path);
+            assert_eq!(pr.keys.len(), expected);
+            if expected == 3 {
+                assert_eq!(pr.keys[1].time, s.active_comp().unwrap().frame_rate.tick_of(10));
+                assert_eq!(pr.keys[1].value, pr.keys[0].value);
+            }
+        }
+        assert_eq!(prop(s, layer, "transform/opacity").keys.len(), 2);
+    };
+    check(&s, 3);
+    assert!(s.undo());
+    check(&s, 2);
+    assert!(s.redo());
+    check(&s, 3);
+}
+
+#[test]
+fn replacing_layer_source_preserves_the_entire_layer_and_is_undoable() {
+    let (mut s, id) = setup();
+    animate(&mut s, id, "transform/position", &[(0.0, json!([40, 50, 0])), (1.0, json!([80, 90, 0]))]);
+    s.execute("effect.apply", json!({"layers": [id], "effect": "ec.blur.gaussian"})).unwrap();
+    let replacement = s.execute("layer.newSolid", json!({"name": "Replacement", "width": 240, "height": 180})).unwrap()["layer"].as_u64().unwrap();
+    let cid = s.active_comp_id().unwrap();
+    let lid = effectcraft_project::LayerId(id);
+    let before = s.project.comp(cid).unwrap().layer(lid).unwrap().clone();
+    let source = s.project.comp(cid).unwrap().layer(effectcraft_project::LayerId(replacement)).unwrap().source.clone();
+    let item = source.item().unwrap();
+    let count = s.project.comp(cid).unwrap().layers.len();
+    let mut expected = before.clone();
+    expected.source = source;
+    s.execute("layer.replaceSource", json!({"item": item.0, "layers": [id]})).unwrap();
+    assert_eq!(s.project.comp(cid).unwrap().layer(lid).unwrap(), &expected);
+    assert_eq!(s.project.comp(cid).unwrap().layers.len(), count);
+    assert!(s.undo());
+    assert_eq!(s.project.comp(cid).unwrap().layer(lid).unwrap(), &before);
+    assert!(s.redo());
+    assert_eq!(s.project.comp(cid).unwrap().layer(lid).unwrap(), &expected);
+    let unchanged = s.project.clone();
+    assert!(s.execute("layer.replaceSource", json!({"item": cid.0, "layers": [id]})).is_err());
+    assert_eq!(s.project, unchanged, "cyclic replacement is atomic");
+    s.edit("Lock", None, |p, _| {
+        p.comp_mut(cid).unwrap().layer_mut(lid).unwrap().switches.locked = true;
+        Ok(())
+    }).unwrap();
+    let unchanged = s.project.clone();
+    assert!(s.execute("layer.replaceSource", json!({"item": item.0, "layers": [id]})).is_err());
+    assert_eq!(s.project, unchanged, "locked layers cannot be replaced");
+}

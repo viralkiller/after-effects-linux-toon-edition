@@ -13,6 +13,7 @@ mod blur2;
 mod blur3;
 pub mod camera_tracker;
 mod card3d;
+mod card_pieces;
 pub mod catalog;
 mod channel;
 mod channel2;
@@ -47,12 +48,8 @@ pub mod paint;
 mod perspective;
 mod perspective2;
 pub mod plugin;
-pub mod psim;
 pub mod puppet;
 pub mod roto;
-mod sim;
-mod sim2;
-mod sim3;
 mod stylize2;
 mod stylize3;
 mod textfx;
@@ -85,8 +82,6 @@ use effectcraft_project::build::Ids;
 use effectcraft_project::{GroupKind, ParamUi, PropGroup, Property};
 pub use effectcraft_raster::{AuxChannels, Image};
 pub use misc::{INVERT_ALPHA, INVERT_CHANNELS, glow_ab_t, glow_operation};
-pub use sim::particle_state;
-pub use sim3::{PgBlit, PgPlan, playground_plan, playground_state};
 pub use stylize2::strobe_on;
 // CPU helpers the GPU kernels share (effectcraft-gpu).
 pub use blur2::{camera_lens_plain, camera_lens_spans};
@@ -108,14 +103,10 @@ pub use textfx::{TextLayer, text_layer};
 pub use time_fx::{PixelMotion, TimewarpPlan, TwStep, posterized_time, time_frames, timewarp_crop, timewarp_plan};
 // effectcraft-gpu fx_tone.
 pub use ocio::color_stabilizer_maps;
-// GPU effects, part B (3D Channel, Immersive Video, colour management, simulation render passes).
+// GPU effects, part B (3D Channel, Immersive Video, colour management, card rendering).
 pub use channel3d::{CRYPTO_LAYERS, id_color, selection_hashes};
 pub use ocio::{ColorOp, Straight, Tf, color_program};
-pub use sim::{Acc, Blob, Bubble, Post, Shape, Sprite, SpritePlan, Tint, bubble_list, drizzle_drops, mercury_blobs, sprite_plan};
-pub use sim2::{
-    CausticsSetup, FoamDisc, FoamEnv, FoamPlan, Piece, PiecePlan, PieceTex, PixelPlan, WavePlan, Waves, caustics_setup, foam_full_plan, piece_plan, pixel_plan,
-    wave_world_plan,
-};
+pub use card_pieces::{Piece, PiecePlan, PieceTex, piece_plan};
 pub use utility::{Lut, load_lut};
 pub use vr::{equi_dir as vr_equi_dir, rotation as vr_rotation};
 
@@ -136,7 +127,6 @@ pub const CATEGORIES: &[&str] = &[
     "Obsolete",
     "Paint",
     "Perspective",
-    "Simulation",
     "Stylize",
     "Text",
     "Time",
@@ -337,7 +327,7 @@ pub trait EffectHost: Sync {
         None
     }
     /// The composition's camera and first light relative to the effect's layer (Card
-    /// Dance / Shatter / Card Wipe's Comp Camera and First Comp Light). `None` when unknown.
+    /// Wipe's Comp Camera and First Comp Light). `None` when unknown.
     fn comp_scene(&self) -> Option<CompScene> {
         None
     }
@@ -346,11 +336,7 @@ pub trait EffectHost: Sync {
     fn params_at(&self, _layer_time: f64) -> Option<Params> {
         None
     }
-    /// A particle simulation backend (GPU particles; see [`psim`]). `None` = simulate on the
-    /// CPU.
-    fn particles(&self) -> Option<&dyn psim::ParticleSim> {
-        None
-    }
+
 }
 
 /// Extra context the renderer may supply (all optional; `Default` is "nothing known").
@@ -466,8 +452,6 @@ pub fn registry() -> &'static [EffectSpec] {
         v.extend(perspective::specs());
         v.extend(transition::specs());
         v.extend(utility::specs());
-        v.extend(sim::specs());
-        v.extend(sim2::specs());
         v.extend(distort3::specs());
         v.extend(perspective2::specs());
         v.extend(utility2::specs());
@@ -487,7 +471,6 @@ pub fn registry() -> &'static [EffectSpec] {
         v.extend(distort4::specs());
         v.extend(keylight::specs());
         v.extend(mocha_shape::specs());
-        v.extend(sim3::specs());
         v.extend(channel3d::specs());
         v.extend(time_fx::specs());
         v.extend(audio_fx::specs());
@@ -561,14 +544,6 @@ fn toon_catalogue_legacy_only(id: &str) -> bool {
             | "ec.key.keycleaner"
             | "ec.key.screen"
             | "ec.keying.keylight"
-            | "ec.sim.cchair"
-            | "ec.sim.ccmrmercury"
-            | "ec.sim.foam"
-            | "ec.sim.caustics"
-            | "ec.sim.waveworld"
-            | "ec.sim.carddance"
-            | "ec.sim.particleplayground"
-            | "ec.sim.shatter"
             | "ec.stylize.ccglass"
             | "ec.stylize.ccplastic"
             | "ec.perspective.bevelalpha"
@@ -767,64 +742,18 @@ pub const PARAM_GROUPS: &[(&str, &str)] = &[
     ("smoothing", "Smoothing"),
     ("weighting", "Weighting"),
     ("sourceCrops", "Source Crops"),
-    // Simulation.
-    ("extras", "Extras"),
-    ("effectCamera", "Effect Camera"),
-    ("wiggle", "Wiggle"),
-    ("light", "Light"),
+    // Shared card and effect controls.
     ("shading", "Shading"),
-    ("producer", "Producer"),
-    ("physics", "Physics"),
-    ("directionAxis", "Direction Axis"),
-    ("gravityVector", "Gravity Vector"),
-    ("particle", "Particle"),
-    ("hairfallMap", "Hairfall Map"),
-    ("hairColor", "Hair Color"),
-    ("bottom", "Bottom"),
-    ("water", "Water"),
-    ("sky", "Sky"),
     ("lighting", "Lighting"),
     ("material", "Material"),
     ("shape", "Shape"),
-    ("force1", "Force 1"),
-    ("force2", "Force 2"),
-    ("bubbles", "Bubbles"),
-    ("rendering", "Rendering"),
-    ("flowMap", "Flow Map"),
-    ("heightMapControls", "Height Map Controls"),
-    ("wireframeControls", "Wireframe Controls"),
-    ("ground", "Ground"),
     ("geometric", "Geometric Distortion"),
     ("target", "Target Point"),
-    ("simulation", "Simulation"),
-    ("producer1", "Producer 1"),
-    ("producer2", "Producer 2"),
-    ("xPosition", "X Position"),
-    ("yPosition", "Y Position"),
-    ("zPosition", "Z Position"),
-    ("xRotation", "X Rotation"),
-    ("yRotation", "Y Rotation"),
-    ("zRotation", "Z Rotation"),
-    ("xScale", "X Scale"),
-    ("yScale", "Y Scale"),
     ("cameraPosition", "Camera Position"),
     ("cornerPins", "Corner Pins"),
     ("positionJitter", "Position Jitter"),
     ("rotationJitter", "Rotation Jitter"),
-    ("textures", "Textures"),
-    ("gradient", "Gradient"),
-    ("cannon", "Cannon"),
-    ("grid", "Grid"),
-    ("layerExploder", "Layer Exploder"),
-    ("layerMap", "Layer Map"),
-    ("gravity", "Gravity"),
-    ("repel", "Repel"),
-    ("wall", "Wall"),
     ("persistentPropertyMapper", "Persistent Property Mapper"),
-    ("ephemeralPropertyMapper", "Ephemeral Property Mapper"),
-    ("particleExploder", "Particle Exploder"),
-    ("affects", "Affects"),
-    ("options", "Options"),
     // Keying, Matte, Obsolete (Key Light's groups are in `keylight::GROUPS`).
     ("ultraSettings", "Ultra Settings"),
     ("additionalForeground", "Additional Foreground"),
@@ -1100,27 +1029,9 @@ pub const GPU_EFFECTS: &[&str] = &[
     "ec.vr.rotatesphere",
     "ec.vr.sharpen",
     "ec.vr.spheretoplane",
-    // Simulation render passes.
-    "ec.sim.ccrainfall",
-    "ec.sim.ccsnowfall",
-    "ec.sim.ccstarburst",
-    "ec.sim.ccbubbles",
-    "ec.sim.ccdrizzle",
-    "ec.sim.cchair",
-    "ec.sim.ccmrmercury",
-    "ec.sim.caustics",
-    "ec.sim.waveworld",
-    "ec.sim.foam",
-    "ec.sim.shatter",
-    "ec.sim.carddance",
+    // Card Wipe geometry.
     "ec.transition.cardwipe",
-    // effectcraft-gpu fx_particles (particle render passes)
-    "ec.sim.ccparticleworld",
-    "ec.sim.ccparticlesystems2",
-    "ec.sim.particleplayground",
-    "ec.sim.ccballaction",
-    "ec.sim.ccpixelpolly",
-    "ec.sim.ccscatterize",
+    // Curl Noise field processing.
     "ec.noise.curlnoise",
     // effectcraft-gpu fx_light (the CC light family)
     "ec.generate.cclightrays",
@@ -1200,7 +1111,7 @@ pub const GPU_EFFECTS: &[&str] = &[
 /// Effects that can read [`EffectHost::comp_scene`] (the comp camera or the first comp light):
 /// their output changes when the camera, the lights or the layer's own transform move, so the
 /// renderer's layer cache folds the comp scene into the key for these.
-pub const READS_COMP_SCENE: &[&str] = &["ec.sim.carddance", "ec.sim.shatter", "ec.transition.cardwipe", "ec.sim.caustics", "ec.sim.ccparticleworld"];
+pub const READS_COMP_SCENE: &[&str] = &["ec.transition.cardwipe"];
 
 /// Effects whose output depends on [`EffectCtx::time`] directly (not only through animated
 /// parameters). The renderer's layer cache folds the layer time into the key for these.
@@ -1261,9 +1172,7 @@ pub const TIME_DEPENDENT: &[&str] = &[
 
 /// See [`TIME_DEPENDENT`].
 pub fn is_time_dependent(id: &str) -> bool {
-    // Simulations replay from layer time 0, so every frame differs even when the defaults
-    // happen to look static at the test's two sample times.
-    id.starts_with("ec.sim.") || TIME_DEPENDENT.contains(&id)
+    TIME_DEPENDENT.contains(&id)
 }
 
 /// Run an effect on a buffer.
@@ -1289,6 +1198,14 @@ pub(crate) fn run_fx(id: &str, vals: &[(&str, Value)], img: Image, time: f64, en
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn toon_catalog_has_no_simulations_and_keeps_shared_effects() {
+        assert!(!all().iter().any(|spec| spec.category == "Simulation" || spec.id.starts_with("ec.sim.")));
+        assert!(!GPU_EFFECTS.iter().any(|id| id.starts_with("ec.sim.")));
+        assert!(find("ec.transition.cardwipe").is_some());
+        assert!(find("ec.noise.curlnoise").is_some());
+    }
 
     #[test]
     fn run_fx_passthrough() {

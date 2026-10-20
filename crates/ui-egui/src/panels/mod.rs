@@ -157,7 +157,6 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: PanelKind, rect: Rec
         PanelKind::LumetriScopes => scopes_panel::show(app, ui, rect),
         PanelKind::Footage => footage_panel::show(app, ui, rect),
         PanelKind::MediaBrowser | PanelKind::VrCompEditor => {},
-        PanelKind::Metadata => media_panels::metadata(app, ui, rect),
         PanelKind::Progress => media_panels::progress(app, ui, rect),
         PanelKind::ContentAwareFill => {},
         PanelKind::CreateNullsFromPaths => path_vr_panels::create_nulls(app, ui, rect),

@@ -444,6 +444,22 @@ mod fork_reduction_tests {
     use super::*;
 
     #[test]
+    fn old_metadata_tabs_load_and_are_removed() {
+        let old: PanelKind = serde_json::from_str("\"Metadata\"").unwrap();
+        let mut ui = UiState::default();
+        ui.dock = DockNode::Tabs { panels: vec![PanelKind::Project, old], active: 1 };
+        ui.focused = old;
+        ui.maximized = Some(old);
+        remove_retired_panels(&mut ui);
+        let mut panels = Vec::new();
+        ui.dock.panels(&mut panels);
+        assert_eq!(panels, vec![PanelKind::Project]);
+        assert_eq!(ui.focused, PanelKind::Composition);
+        assert_eq!(ui.maximized, None);
+        assert!(PanelKind::from_name("metadata").is_none());
+    }
+
+    #[test]
     fn retired_panels_are_removed_without_losing_other_tabs() {
         let mut ui = UiState::default();
         ui.dock = DockNode::Tabs {

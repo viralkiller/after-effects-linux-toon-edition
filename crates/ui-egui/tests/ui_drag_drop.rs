@@ -512,3 +512,23 @@ fn a_dropped_folder_imports_as_one_sequence_with_sequence_interpretation() {
     assert!(h.state().auto.find("form.field.missingFrames").is_none());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn alt_project_drop_replaces_selected_layer_in_place() {
+    use effectcraft_engine::project::{ItemId, LayerId, LayerSource};
+    let (mut h, clip) = harness();
+    let id = layer_id(&h, "Middle");
+    h.state_mut().session.execute("layer.select", json!({"layers": [id]})).unwrap();
+    h.state_mut().session.execute("prop.addKey", json!({"layer": id, "path": "transform/scale", "time": 0.0, "value": [75, 75, 100]})).unwrap();
+    h.run_steps(2);
+    let before = h.state().session.active_comp().unwrap().layer(LayerId(id)).unwrap().clone();
+    let from = rect(&h, &format!("project.item.{clip}.name")).center();
+    let to = rect(&h, &format!("timeline.layer.{id}.row")).center();
+    drag(&mut h, from, to, Modifiers::ALT);
+    assert_eq!(stack(&h), ["Top", "Middle", "Bottom"]);
+    let mut expected = before.clone();
+    expected.source = LayerSource::Comp { item: ItemId(clip) };
+    assert_eq!(h.state().session.active_comp().unwrap().layer(LayerId(id)).unwrap(), &expected);
+    h.state_mut().session.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(h.state().session.active_comp().unwrap().layer(LayerId(id)).unwrap(), &before);
+}

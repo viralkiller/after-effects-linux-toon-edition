@@ -6,7 +6,7 @@
 //! opened through the File System Access API, whose files are read only when imported
 //! ([`Browser::fetch`]).
 //!
-//! Also the metadata the Metadata panel shows for project items and files (codec, size, rate,
+//! Also the metadata used by file browsing (codec, size, rate,
 //! duration, colour profile, dates).
 
 use std::collections::BTreeMap;
@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use effectcraft_project::{Footage, FootageKind, Item, ItemKind, Project};
+use effectcraft_project::{Footage, FootageKind};
 
 /// Media Browser state (in [`crate::EditorState`], serde for agents).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -301,7 +301,7 @@ fn kind_name(k: FootageKind) -> &'static str {
     }
 }
 
-/// Metadata of footage (the fields the Metadata panel lists).
+/// Metadata of footage for file browsing.
 pub fn footage_metadata(f: &Footage) -> Value {
     let (created, modified, size) = file_dates(f.sequence.first().map(String::as_str).unwrap_or(&f.path));
     json!({
@@ -327,59 +327,6 @@ pub fn footage_metadata(f: &Footage) -> Value {
         "modified": modified.map(iso_date),
         "fileSize": size,
         "missing": f.missing,
-    })
-}
-
-/// Metadata of a project item.
-pub fn item_metadata(p: &Project, it: &Item) -> Value {
-    let mut v = json!({
-        "id": it.id.0,
-        "name": it.name,
-        "type": it.type_name(),
-        "comment": it.comment,
-        "label": format!("{:?}", it.label),
-    });
-    let extra = match &it.kind {
-        ItemKind::Footage(f) => footage_metadata(f),
-        ItemKind::Comp(c) => json!({
-            "width": c.width,
-            "height": c.height,
-            "pixelAspect": c.pixel_aspect,
-            "frameRate": c.frame_rate.as_f64(),
-            "duration": c.duration.seconds(),
-            "layers": c.layers.len(),
-            "workArea": [c.work_area.0.seconds(), c.work_area.1.seconds()],
-        }),
-        ItemKind::Solid(s) => json!({"width": s.width, "height": s.height, "color": s.color}),
-        ItemKind::Folder => json!({"items": p.items.values().filter(|i| i.parent == Some(it.id)).count()}),
-    };
-    if let (Value::Object(a), Value::Object(b)) = (&mut v, extra) {
-        a.extend(b);
-    }
-    if let Some(px) = &it.proxy {
-        v["proxy"] = json!(px.footage.path);
-    }
-    v
-}
-
-/// Project-level metadata.
-pub fn project_metadata(p: &Project, path: Option<&str>) -> Value {
-    let st = &p.settings;
-    let count = |f: &dyn Fn(&ItemKind) -> bool| p.items.values().filter(|i| f(&i.kind)).count();
-    json!({
-        "path": path,
-        "comment": st.comment,
-        "bitDepth": st.bit_depth.label(),
-        "workingSpace": st.working_space.map(|c| format!("{c:?}")),
-        "linearize": st.linearize,
-        "timeDisplay": format!("{:?}", st.time_display),
-        "audioSampleRate": st.audio_sample_rate,
-        "items": p.items.len(),
-        "compositions": count(&|k| matches!(k, ItemKind::Comp(_))),
-        "footage": count(&|k| matches!(k, ItemKind::Footage(_))),
-        "solids": count(&|k| matches!(k, ItemKind::Solid(_))),
-        "folders": count(&|k| matches!(k, ItemKind::Folder)),
-        "renderQueue": p.render_queue.len(),
     })
 }
 
