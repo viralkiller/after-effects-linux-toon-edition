@@ -8,10 +8,10 @@
 </p>
 
 
-<h1 align="center">EffectCraft Light</h1>
+<h1 align="center">After Effects For Linux (Light Edition)</h1>
 
 <p align="center">
-  <b>Optimized for 2D Animation, a fork of EffectCraft (AE Clone for Linux); an open-source, clean-room reimplementation of Adobe After Effects, rebuilt in pure Rust.</b>
+  <b>Optimized for 2D Animation, a fork of EffectCraft (After Effects Clone for Linux); an open-source, clean-room reimplementation of Adobe After Effects, rebuilt in pure Rust.</b>
 </p>
 
 <p align="center">
