@@ -1,17 +1,7 @@
-<p align="center">
-  <a href="https://getartcraft.com/">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="docs/brand/artcraft-logo-white.svg">
-      <img alt="ArtCraft" src="docs/brand/artcraft-logo.svg" width="200">
-    </picture>
-  </a>
-</p>
-
-
-<h1 align="center">EffectCraft</h1>
+<h1 align="center">After Effects For Linux (Light Edition)</h1>
 
 <p align="center">
-  <b>Motion graphics and visual effects; an open-source, clean-room reimplementation of Adobe After Effects, rebuilt in pure Rust.</b>
+  <b>Optimized for 2D Animation, a fork of EffectCraft (After Effects Clone for Linux); an open-source, clean-room reimplementation of Adobe After Effects, rebuilt in pure Rust.</b>
 </p>
 
 <p align="center">
