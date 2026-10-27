@@ -82,7 +82,9 @@ impl crate::Session {
     /// What the Media Browser browses: [`crate::Session::browser`], else the local file system
     /// where this build has one.
     pub fn media_browser(&self) -> Option<std::sync::Arc<dyn Browser>> {
-        if crate::feature_policy::removed_command("mediaBrowser.list") { return None; }
+        if crate::feature_policy::removed_command("mediaBrowser.list") {
+            return None;
+        }
         self.browser.clone().or_else(|| available().then(|| std::sync::Arc::new(FsBrowser) as std::sync::Arc<dyn Browser>))
     }
 }
@@ -195,7 +197,7 @@ pub struct Entry {
 }
 
 const VIDEO: &[&str] = &["mp4", "m4v", "mov", "webm", "mkv", "avi", "mxf", "gif"];
-const IMAGE: &[&str] = &["png", "jpg", "jpeg", "tif", "tiff", "exr", "bmp", "webp", "psd", "psb", "svg", "tga", "dpx", "hdr"];
+const IMAGE: &[&str] = &["png", "jpg", "jpeg", "tif", "tiff", "exr", "bmp", "webp", "psd", "psb", "xcf", "svg", "tga", "dpx", "hdr"];
 const AUDIO: &[&str] = &["wav", "aif", "aiff", "mp3", "m4a", "aac", "flac", "ogg", "opus"];
 const DATA: &[&str] = &["json", "csv", "tsv", "mgjson"];
 const MODEL: &[&str] = &["gltf", "glb", "obj"];

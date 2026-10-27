@@ -47,11 +47,9 @@ fn retired_controls_are_absent() {
 #[test]
 fn window_menu_opens_the_new_panels() {
     let mut h = harness();
-    for (name, kind, auto) in [
-        ("lumetriScopes", PanelKind::LumetriScopes, "scopes.kind"),
-        ("footage", PanelKind::Footage, "footage.empty"),
-        ("progress", PanelKind::Progress, ""),
-    ] {
+    for (name, kind, auto) in
+        [("lumetriScopes", PanelKind::LumetriScopes, "scopes.kind"), ("footage", PanelKind::Footage, "footage.empty"), ("progress", PanelKind::Progress, "")]
+    {
         open(&mut h, name);
         assert!(h.state().ui.dock.contains(kind) || h.state().ui.floating.iter().any(|f| f.panels.contains(&kind)), "{name} shown");
         if !auto.is_empty() {

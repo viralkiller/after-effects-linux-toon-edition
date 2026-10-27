@@ -143,7 +143,7 @@ fn imports_ext(p: &Value, exts: &[&str]) -> bool {
 
 /// The import includes a Photoshop document.
 fn is_layered(p: &Value) -> bool {
-    imports_ext(p, &["psd", "psb"])
+    imports_ext(p, &["psd", "psb", "xcf"])
 }
 
 /// The import includes a PDF or Illustrator file (which may have several pages).
@@ -217,7 +217,7 @@ pub fn open_form(app: &mut EffectcraftApp, id: &str, p: &Value) -> bool {
     let (title, fields): (String, Vec<Field>) = match id {
         // Photoshop files: Import Kind (Footage / Composition / – Retain Layer Sizes).
         "file.import" if !has(p, &["importAs"]) && is_layered(p) => (
-            "Import Photoshop File".into(),
+            if imports_ext(p, &["xcf"]) { "Import GIMP XCF File".into() } else { "Import Photoshop File".into() },
             vec![Field::choice(
                 "importAs",
                 "Import Kind",
@@ -981,5 +981,17 @@ mod tests {
         let r = app.session.execute("file.exportTimeline", params).unwrap();
         assert_eq!(r["path"], path.as_str());
         assert!(std::fs::read_to_string(&path).unwrap().contains("<xmeml"));
+    }
+}
+
+#[cfg(test)]
+mod xcf_import_tests {
+    use super::*;
+    #[test]
+    fn xcf_import_uses_existing_layered_dialog() {
+        assert!(is_layered(&json!({"paths":["/art/scene.XCF"]})));
+        assert!(is_layered(&json!({"path":"/art/scene.xcf"})));
+        assert!(is_layered(&json!({"paths":["/art/scene.psd"]})));
+        assert!(!is_layered(&json!({"paths":["/art/scene.png"]})));
     }
 }

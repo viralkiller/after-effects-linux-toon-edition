@@ -99,4 +99,3 @@ fn render_queue_jobs_render_on_the_worker_gpu() {
         assert!(worst <= 3, "{name}: differs by {worst} levels");
     }
 }
-

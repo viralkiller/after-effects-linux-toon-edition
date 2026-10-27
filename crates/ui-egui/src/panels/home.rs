@@ -235,11 +235,7 @@ fn rail_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painter, rail:
     }
     y += 10.0;
     // Pages.
-    let page = if app.ui.home_templates {
-        1
-    } else {
-        0
-    };
+    let page = if app.ui.home_templates { 1 } else { 0 };
     for (k, (label, icon)) in [("Home", Icon::Home), ("Templates", Icon::Grid)].into_iter().enumerate() {
         let r = Rect::from_min_size(pos2(rail.min.x + 8.0, y), vec2(rail.width() - 16.0, 34.0));
         let resp = ui.interact(r, egui::Id::new(("home-tab", label)), Sense::click());
@@ -256,7 +252,6 @@ fn rail_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painter, rail:
         }
         y += 38.0;
     }
-
 }
 
 /// The Home page: the welcome, quick-start tiles and the recent projects table.
@@ -282,11 +277,8 @@ fn home_page(
     );
     y += 36.0;
     // Quick start.
-    let tiles = [
-        ("New Composition", "app.newComp", Icon::NewComp),
-        ("Import Footage…", "file.import", Icon::Footage),
-        ("New from Template", "templates", Icon::Grid),
-    ];
+    let tiles =
+        [("New Composition", "app.newComp", Icon::NewComp), ("Import Footage…", "file.import", Icon::Footage), ("New from Template", "templates", Icon::Grid)];
     let gap = 12.0;
     let tw = ((w - gap * (tiles.len() - 1) as f32) / tiles.len() as f32).clamp(120.0, 220.0);
     for (k, (label, id, icon)) in tiles.into_iter().enumerate() {
@@ -521,6 +513,4 @@ mod tests {
             assert!(app.auto.find(id).is_none(), "{id}");
         }
     }
-
-
 }

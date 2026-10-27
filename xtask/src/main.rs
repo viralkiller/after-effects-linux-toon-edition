@@ -32,6 +32,7 @@ const LAYERS: &[(&str, u8)] = &[
     ("keyframe", 1),
     ("path", 1),
     ("psd", 1),
+    ("xcf", 1),
     ("segment", 1),
     ("project", 2),
     ("text", 2),

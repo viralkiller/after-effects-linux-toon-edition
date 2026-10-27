@@ -8,8 +8,8 @@
 
 pub mod build;
 pub mod essential;
-pub mod props;
 pub mod preview;
+pub mod props;
 pub mod render_queue;
 pub mod render_templates;
 pub mod sequence;
@@ -1084,7 +1084,10 @@ pub struct Proxy {
 /// footage (File ▸ Import ▸ Composition / Composition – Retain Layer Sizes, or Choose Layer).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceLayer {
-    /// Layer record index in the file (bottom of the stack = 0).
+    /// Persistent GIMP layer identity, independent of name/order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub xcf_tattoo: Option<u32>,
+    /// Format-specific layer record index (XCF: top of the stack = 0).
     pub index: u32,
     pub name: String,
     /// The footage is the layer's own bounds (Retain Layer Sizes) rather than the document size.

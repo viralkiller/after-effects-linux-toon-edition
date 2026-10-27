@@ -62,13 +62,6 @@ fn setup(w: u32, h: u32, secs: f64, make: impl Fn(u32) -> Image + Send + Sync + 
     (s, cid, lid, item)
 }
 
-fn tmp(name: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!("ec-panels-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d
-}
-
 // ---------------------------------------------------------------- Progress
 
 #[test]

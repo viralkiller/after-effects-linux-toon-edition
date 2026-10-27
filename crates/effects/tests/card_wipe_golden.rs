@@ -78,25 +78,23 @@ type Set = Vec<(&'static str, Value)>;
 
 /// (effect id, parameter sets) — the first set of each is the defaults.
 fn cases() -> Vec<(&'static str, Vec<Set>)> {
-    vec![
-        (
-            "ec.transition.cardwipe",
+    vec![(
+        "ec.transition.cardwipe",
+        vec![
+            vec![],
+            vec![("completion", n(40.0))],
             vec![
-                vec![],
-                vec![("completion", n(40.0))],
-                vec![
-                    ("completion", n(60.0)),
-                    ("flipAxis", e(2)),
-                    ("flipOrder", e(8)),
-                    ("gradientLayer", l(MAP)),
-                    ("backLayer", l(TEX)),
-                    ("timingRandomness", n(0.5)),
-                    ("rotationJitter/xRotJitterAmount", n(20.0)),
-                ],
-                vec![("completion", n(50.0)), ("backSelf", Value::Bool(true)), ("cameraPosition/yRotation", n(20.0)), ("positionJitter/zJitterAmount", n(1.0))],
+                ("completion", n(60.0)),
+                ("flipAxis", e(2)),
+                ("flipOrder", e(8)),
+                ("gradientLayer", l(MAP)),
+                ("backLayer", l(TEX)),
+                ("timingRandomness", n(0.5)),
+                ("rotationJitter/xRotJitterAmount", n(20.0)),
             ],
-        ),
-    ]
+            vec![("completion", n(50.0)), ("backSelf", Value::Bool(true)), ("cameraPosition/yRotation", n(20.0)), ("positionJitter/zJitterAmount", n(1.0))],
+        ],
+    )]
 }
 
 /// Layer times, in order (the third seeks backwards).

@@ -51,7 +51,7 @@ impl From<filmcraft_media::MediaError> for MediaError {
 }
 
 /// File extensions recognised as stills.
-pub const STILL_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "exr", "psd", "psb", "svg", "pdf", "ai", "eps"];
+pub const STILL_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "exr", "psd", "psb", "xcf", "svg", "pdf", "ai", "eps"];
 /// File extensions recognised as audio-only files.
 pub const AUDIO_EXTENSIONS: &[&str] = filmcraft_media::AUDIO_EXTENSIONS;
 /// File extensions recognised as movies.
@@ -76,3 +76,6 @@ pub(crate) fn ext_of(path: &std::path::Path) -> String {
 pub(crate) fn rate_from_fc(r: filmcraft_time::FrameRate) -> effectcraft_time::FrameRate {
     if r.num > 0 && r.den > 0 { effectcraft_time::FrameRate::new(r.num, r.den) } else { effectcraft_time::FrameRate::FPS_30 }
 }
+
+#[cfg(test)]
+mod tests_xcf;

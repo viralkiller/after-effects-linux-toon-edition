@@ -46,8 +46,10 @@ struct Key {
     /// pixels.
     interp: u8,
     matte: [u32; 3],
-    /// A movie frame made at this size for a reduced-resolution render ((0, 0): as decoded).
+    /// A frame requested at this size for a reduced-resolution render ((0, 0): as decoded).
     size: (u32, u32),
+    /// Metadata controls whether a sized decode can safely resample the native frame.
+    nominal_size: (u32, u32),
 }
 
 struct Entry {
@@ -591,7 +593,8 @@ impl Inner {
         if let Some(b) = lock(&self.files).get(path) {
             return Ok(b.clone());
         }
-        std::fs::read(path).map(Into::into).map_err(|e| MediaError::Io(format!("{path}: {e}")))
+        let bytes = if path.to_ascii_lowercase().ends_with(".xcf") { effectcraft_xcf::read_file(path) } else { std::fs::read(path) };
+        bytes.map(Into::into).map_err(|e| MediaError::Io(format!("{path}: {e}")))
     }
 
     /// The opened movie/audio source for `path`. The first caller opens it, outside the map's
@@ -654,7 +657,8 @@ impl Inner {
         };
         let interp = alpha | (u8::from(footage.preserve_rgb) << 2);
         let matte = if footage.alpha == AlphaMode::Premultiplied { footage.premul_color.map(f32::to_bits) } else { [0; 3] };
-        let key = |path: &str, frame| Key { generation: 0, path: path.into(), frame, interp, matte, size: (0, 0) };
+        let key =
+            |path: &str, frame| Key { generation: 0, path: path.into(), frame, interp, matte, size: (0, 0), nominal_size: (footage.width, footage.height) };
         match footage.kind {
             FootageKind::Sequence if !footage.sequence.is_empty() => {
                 let i = Self::frame_index(footage.frame_rate, t, footage.sequence_frames(), footage.loop_count);
@@ -762,6 +766,12 @@ impl Inner {
                 Some(img) => img,
                 None => Arc::new(self.decode(&Loc { key, media_t: None }, footage)?),
             };
+            // An edited PSD layer can have different bounds before the project metadata is
+            // refreshed. Do not squeeze those pixels into the old aspect ratio. Return the
+            // native frame, as the full-resolution/export path does.
+            if (full.width, full.height) != (footage.width, footage.height) {
+                return Ok(Arc::unwrap_or_clone(full));
+            }
             // Keep only the requested LOD on a cold miss; do not also pin a full-size image.
             return Ok(effectcraft_raster::resample(&full, loc.key.size.0, loc.key.size.1));
         }
@@ -1001,7 +1011,7 @@ mod tests {
     fn lru_respects_budget_and_recycles() {
         let mut c = Lru::default();
         let img = || Arc::new(Image::new(16, 16)); // 4 KiB + overhead
-        let k = |i| Key { generation: 0, path: "a".into(), frame: i, interp: 0, matte: [0; 3], size: (0, 0) };
+        let k = |i| Key { generation: 0, path: "a".into(), frame: i, interp: 0, matte: [0; 3], size: (0, 0), nominal_size: (1, 1) };
         let budget = 3 * (4096 + 64);
         for i in 0..10 {
             c.insert(k(i), img(), budget);
@@ -1109,5 +1119,52 @@ mod still_optimization_tests {
         l.spare.push(Image::new(32, 32).data);
         l.evict(1);
         assert_eq!(l.spare_bytes(), 0);
+    }
+}
+
+#[cfg(test)]
+mod psd_preview_reload_tests {
+    use super::*;
+    use effectcraft_project::SourceLayer;
+    use effectcraft_psd::write::{WDoc, WLayer, write};
+
+    fn psd(width: u32, height: u32, colour: [f32; 4]) -> Arc<[u8]> {
+        let mut doc = WDoc::new(64, 64);
+        let rect = effectcraft_psd::Rect { left: 0, top: 0, right: width as i32, bottom: height as i32 };
+        doc.layers.push(WLayer::solid("Drawing", rect, colour));
+        write(&doc).into()
+    }
+
+    #[test]
+    fn edited_psd_bounds_are_not_squeezed_into_stale_preview_dimensions() {
+        let pool = MediaPool::with_budget(1 << 20);
+        let mut f = Footage {
+            path: "drawing.psd".into(),
+            kind: FootageKind::Still,
+            width: 32,
+            height: 16,
+            has_video: true,
+            alpha: AlphaMode::Straight,
+            layer: Some(SourceLayer { index: 0, name: "Drawing".into(), layer_size: true, ..Default::default() }),
+            ..Default::default()
+        };
+        pool.add_bytes(&f.path, psd(32, 16, [1.0, 0.0, 0.0, 1.0]));
+        let old = FootageSource::frame_at_size(&pool, ItemId(1), &f, Tick::ZERO, 16, 8).unwrap();
+        assert_eq!((old.width, old.height), (16, 8));
+        pool.add_bytes(&f.path, psd(48, 24, [0.0, 1.0, 0.0, 1.0]));
+        let preview = FootageSource::frame_at_size(&pool, ItemId(1), &f, Tick::ZERO, 16, 8).unwrap();
+        let native = FootageSource::frame(&pool, ItemId(1), &f, Tick::ZERO).unwrap();
+        assert_eq!((preview.width, preview.height), (48, 24));
+        assert_eq!(preview.data, native.data);
+        assert_ne!(preview.get(0, 0), old.get(0, 0));
+        // Same requested size after metadata refresh must not hit the old native fallback.
+        (f.width, f.height) = (48, 24);
+        let refreshed = FootageSource::frame_at_size(&pool, ItemId(1), &f, Tick::ZERO, 16, 8).unwrap();
+        assert_eq!((refreshed.width, refreshed.height), (16, 8));
+        assert_eq!(refreshed.data, effectcraft_raster::resample(&native, 16, 8).data);
+        pool.add_bytes(&f.path, psd(16, 40, [0.0, 0.0, 1.0, 1.0]));
+        let preview = FootageSource::frame_at_size(&pool, ItemId(1), &f, Tick::ZERO, 24, 12).unwrap();
+        assert_eq!((preview.width, preview.height), (16, 40));
+        assert_eq!(preview.data, FootageSource::frame(&pool, ItemId(1), &f, Tick::ZERO).unwrap().data);
     }
 }

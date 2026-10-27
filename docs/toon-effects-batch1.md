@@ -30,7 +30,7 @@ transforms remain available; hiding 3D Channel effects does not disable multipla
 - Inner/Outer Key (`ec.key.innerouter`)
 - Key Cleaner (`ec.key.keycleaner`)
 - Screen Key (`ec.key.screen`)
-- Key Light (`ec.keying.keylight`)
+Key Light (`ec.keying.keylight`) is retained in the Keying menu.
 
 ## Heavy simulations
 

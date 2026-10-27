@@ -20,12 +20,7 @@ pub fn show(dialog: FileDialog, done: DialogDone, ctx: egui::Context) {
 }
 
 /// Use a dialog builder with the host window already set as its parent.
-pub fn show_parented(
-    dialog: FileDialog,
-    done: DialogDone,
-    ctx: egui::Context,
-    base: AsyncFileDialog,
-) {
+pub fn show_parented(dialog: FileDialog, done: DialogDone, ctx: egui::Context, base: AsyncFileDialog) {
     let answer = open(dialog, base);
     let spawned = std::thread::Builder::new().name("ec-file-dialog".into()).spawn(move || {
         done(pollster::block_on(answer));

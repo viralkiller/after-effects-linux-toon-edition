@@ -9,7 +9,6 @@ const W: u32 = 64;
 const H: u32 = 48;
 /// Layer ids served by [`Host`]: a texture and a luminance map.
 const TEX: u64 = 7;
-const MAP: u64 = 8;
 
 /// The effect's own layer: a colour ramp with a clear hole and a half-transparent band
 /// (`hdr` makes part of it overbright).
@@ -84,23 +83,14 @@ type Set = Vec<(&'static str, Value)>;
 
 /// (effect id, parameter sets) — the first set of each is the defaults.
 fn cases() -> Vec<(&'static str, Vec<Set>)> {
-    vec![
-        (
-            "ec.noise.curlnoise",
-            vec![
-                vec![],
-                vec![("view", e(1))],
-                vec![
-                    ("edgeBehavior", e(1)),
-                    ("steps", n(8.0)),
-                    ("displacementAmount", n(60.0)),
-                    ("scale", n(20.0)),
-                    ("rotation", n(30.0)),
-                    ("evolution", n(90.0)),
-                ],
-            ],
-        ),
-    ]
+    vec![(
+        "ec.noise.curlnoise",
+        vec![
+            vec![],
+            vec![("view", e(1))],
+            vec![("edgeBehavior", e(1)), ("steps", n(8.0)), ("displacementAmount", n(60.0)), ("scale", n(20.0)), ("rotation", n(30.0)), ("evolution", n(90.0))],
+        ],
+    )]
 }
 
 /// Layer times, in order (the third seeks backwards).

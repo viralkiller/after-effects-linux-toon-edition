@@ -75,7 +75,7 @@ fn parse_args(args: impl IntoIterator<Item = String>, env_port: Option<String>) 
         match a.as_str() {
             "--control" => out.control_port = args.next().and_then(|p| p.parse().ok()),
             "--demo" => eprintln!("Demo projects have been removed from this fork; opening an empty project."),
-            "--empty" => {},
+            "--empty" => {}
             "--home" => out.home = Some(true),
             "--version" => return None,
             _ => out.files.push(a),
@@ -169,10 +169,10 @@ fn main() -> eframe::Result {
             session.load_settings();
             let recovery = if control_port.is_none() { session.begin_recovery() } else { None };
             let project = files.iter().find(|f| is_project_file(f)).cloned();
-            if let Some(p) = project {
-                if let Err(e) = session.execute("file.open", json!({"path": p})) {
-                    eprintln!("effectcraft: {e}");
-                }
+            if let Some(p) = project
+                && let Err(e) = session.execute("file.open", json!({"path": p}))
+            {
+                eprintln!("effectcraft: {e}");
             }
             let media: Vec<String> = files.iter().filter(|f| !is_project_file(f)).cloned().collect();
             if !media.is_empty()

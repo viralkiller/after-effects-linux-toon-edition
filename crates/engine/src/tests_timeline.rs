@@ -948,7 +948,8 @@ fn replacing_layer_source_preserves_the_entire_layer_and_is_undoable() {
     s.edit("Lock", None, |p, _| {
         p.comp_mut(cid).unwrap().layer_mut(lid).unwrap().switches.locked = true;
         Ok(())
-    }).unwrap();
+    })
+    .unwrap();
     let unchanged = s.project.clone();
     assert!(s.execute("layer.replaceSource", json!({"item": item.0, "layers": [id]})).is_err());
     assert_eq!(s.project, unchanged, "locked layers cannot be replaced");

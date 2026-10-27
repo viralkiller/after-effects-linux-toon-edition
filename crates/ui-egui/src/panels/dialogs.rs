@@ -268,7 +268,6 @@ fn about_main(_app: &mut EffectcraftApp, ui: &mut egui::Ui, t: &Tokens, _cmd: &m
     ui.add_space(12.0);
     ui.label(tr("A clean-room, open-source compositor for motion graphics and visual effects: native on macOS, Windows and Linux, and in the browser."));
     ui.add_space(14.0);
-
 }
 
 fn comp_settings(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens, existing: bool) {

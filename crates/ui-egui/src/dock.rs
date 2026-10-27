@@ -402,17 +402,7 @@ pub fn workspace(name: &str) -> DockNode {
                     tabs(&[Composition, Layer, Footage], 0),
                     right(
                         &[Info, Preview, Audio, Align, Character, Paragraph, LumetriScopes],
-                        &[
-                            EffectsPresets,
-                            Properties,
-                            Wiggler,
-                            Smoother,
-                            MotionSketch,
-                            Paint,
-                            Brushes,
-                            Markers,
-                            CreateNullsFromPaths,
-                        ],
+                        &[EffectsPresets, Properties, Wiggler, Smoother, MotionSketch, Paint, Brushes, Markers, CreateNullsFromPaths],
                     ),
                 ),
             ),

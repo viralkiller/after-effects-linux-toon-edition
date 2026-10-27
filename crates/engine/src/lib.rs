@@ -47,6 +47,7 @@ pub mod tracking;
 pub mod vector;
 pub mod viewer;
 pub mod warp;
+mod xcf_import;
 pub mod xml_project;
 
 use std::sync::Arc;
@@ -137,7 +138,7 @@ pub trait Services: Send + Sync {
 pub struct FsServices;
 impl Services for FsServices {
     fn read_file(&self, path: &str) -> std::io::Result<Vec<u8>> {
-        std::fs::read(path)
+        if path.to_ascii_lowercase().ends_with(".xcf") { effectcraft_xcf::read_file(path) } else { std::fs::read(path) }
     }
     fn write_file(&self, path: &str, data: &[u8]) -> std::io::Result<()> {
         config::atomic_write(std::path::Path::new(path), data)
@@ -1059,6 +1060,8 @@ pub fn upgrade_effects(p: &mut Project) {
 #[cfg(test)]
 mod rq_tests;
 #[cfg(test)]
+mod test_support;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_3d;
@@ -1118,8 +1121,6 @@ mod tests_tail;
 mod tests_text;
 #[cfg(test)]
 mod tests_text_edit;
-#[cfg(test)]
-mod test_support;
 #[cfg(test)]
 mod tests_timeline;
 #[cfg(test)]
@@ -1225,3 +1226,6 @@ mod tests_panels;
 
 #[cfg(test)]
 mod tests_key_time;
+
+#[cfg(test)]
+mod tests_xcf;

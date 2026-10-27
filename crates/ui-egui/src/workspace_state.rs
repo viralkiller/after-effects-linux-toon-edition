@@ -414,7 +414,9 @@ mod tests {
 
 /// Remove retired panels from current and saved layouts without resetting other panels.
 pub(crate) fn remove_retired_panels(ui: &mut UiState) {
-    if ui.workspace == "Motion Tracking" { ui.workspace = "Default".into(); }
+    if ui.workspace == "Motion Tracking" {
+        ui.workspace = "Default".into();
+    }
     for root in std::iter::once(&mut ui.dock).chain(ui.saved_workspaces.values_mut()) {
         root.close(PanelKind::MaskInterpolation);
         root.close(PanelKind::ContentAwareFill);
@@ -426,8 +428,7 @@ pub(crate) fn remove_retired_panels(ui: &mut UiState) {
         for group in groups.iter_mut() {
             let shown = group.panels.get(group.active).copied();
             group.panels.retain(|p| !p.retired());
-            group.active = shown.and_then(|p| group.panels.iter().position(|q| *q == p))
-                .unwrap_or(group.active.min(group.panels.len().saturating_sub(1)));
+            group.active = shown.and_then(|p| group.panels.iter().position(|q| *q == p)).unwrap_or(group.active.min(group.panels.len().saturating_sub(1)));
         }
         groups.retain(|group| !group.panels.is_empty());
     }
@@ -446,10 +447,8 @@ mod fork_reduction_tests {
     #[test]
     fn old_metadata_tabs_load_and_are_removed() {
         let old: PanelKind = serde_json::from_str("\"Metadata\"").unwrap();
-        let mut ui = UiState::default();
-        ui.dock = DockNode::Tabs { panels: vec![PanelKind::Project, old], active: 1 };
-        ui.focused = old;
-        ui.maximized = Some(old);
+        let mut ui =
+            UiState { dock: DockNode::Tabs { panels: vec![PanelKind::Project, old], active: 1 }, focused: old, maximized: Some(old), ..Default::default() };
         remove_retired_panels(&mut ui);
         let mut panels = Vec::new();
         ui.dock.panels(&mut panels);
@@ -461,13 +460,14 @@ mod fork_reduction_tests {
 
     #[test]
     fn retired_panels_are_removed_without_losing_other_tabs() {
-        let mut ui = UiState::default();
-        ui.dock = DockNode::Tabs {
-            panels: vec![PanelKind::Project, PanelKind::MediaBrowser, PanelKind::Tracker, PanelKind::MaskInterpolation], active: 1,
+        let mut ui = UiState {
+            dock: DockNode::Tabs { panels: vec![PanelKind::Project, PanelKind::MediaBrowser, PanelKind::Tracker, PanelKind::MaskInterpolation], active: 1 },
+            ..Default::default()
         };
         ui.saved_workspaces.insert("Custom".into(), ui.dock.clone());
         ui.floating = vec![Floating {
-            panels: vec![PanelKind::VrCompEditor, PanelKind::Preview, PanelKind::ContentAwareFill], active: 1,
+            panels: vec![PanelKind::VrCompEditor, PanelKind::Preview, PanelKind::ContentAwareFill],
+            active: 1,
             rect: [0.0, 0.0, 300.0, 200.0],
         }];
         ui.saved_floating.insert("Custom".into(), ui.floating.clone());

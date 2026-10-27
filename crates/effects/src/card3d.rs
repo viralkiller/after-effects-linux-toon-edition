@@ -9,7 +9,9 @@
 use effectcraft_keyframe::Value;
 use effectcraft_project::ParamUi;
 
-fn pt(x: f64, y: f64) -> Value { Value::Vec2([x, y]) }
+fn pt(x: f64, y: f64) -> Value {
+    Value::Vec2([x, y])
+}
 use crate::{Buf, EffectCtx, ParamSpec, col, num, p, popup, slider};
 
 pub(crate) type M3 = [[f64; 3]; 3];

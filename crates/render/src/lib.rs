@@ -1184,7 +1184,9 @@ impl<'a> Renderer<'a> {
         let mut buf = match self.reduced_size(w, h) {
             // The source resampled it already (`FootageSource::frame_at_size`).
             Some(size) if (img.width, img.height) == size => Buf { img: Arc::unwrap_or_clone(img), offset: [0.0; 2], scale: s },
-            Some((rw, rh)) if k <= 1.0 + 1e-9 => Buf { img: effectcraft_raster::resample(&img, rw, rh), offset: [0.0; 2], scale: s },
+            // Different native bounds (e.g. an edited PSD) keep the same uniform mapping
+            // as full-resolution export instead of being stretched into stale metadata.
+            Some((rw, rh)) if (img.width, img.height) == (w, h) => Buf { img: effectcraft_raster::resample(&img, rw, rh), offset: [0.0; 2], scale: s },
             _ => Buf { img: Arc::unwrap_or_clone(img), offset: [0.0; 2], scale: 1.0 / k },
         };
         if let Some(c) = self.pipe.media_in(f) {

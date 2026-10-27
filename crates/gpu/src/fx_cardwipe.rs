@@ -1,12 +1,14 @@
 //! GPU rasterization for the Card Wipe transition.
-use effectcraft_effects::{EffectCtx, PieceTex};
 use crate::context::{Enc, GpuImage, Params};
 use crate::effects::GBuf;
+use effectcraft_effects::{EffectCtx, PieceTex};
 pub(crate) const KERNELS: &[&str] = &["fxcw_raster"];
 pub(crate) const IDS: &[&str] = &["ec.transition.cardwipe"];
 const MAX_FLOATS: usize = 1 << 24;
 const TILE: i32 = 16;
-pub(crate) fn apply(e: &mut Enc, id: &str, ctx: &EffectCtx, b: GBuf) -> Option<GBuf> { pieces(e, id, ctx, b) }
+pub(crate) fn apply(e: &mut Enc, id: &str, ctx: &EffectCtx, b: GBuf) -> Option<GBuf> {
+    pieces(e, id, ctx, b)
+}
 pub(crate) struct Items {
     stride: usize,
     recs: Vec<f32>,
@@ -148,7 +150,9 @@ pub(crate) fn piece_pass(e: &mut Enc, b: GBuf, plan: &effectcraft_effects::Piece
             None => rec.extend([0.0; 4]),
         }
         rec.extend([q.back as u32 as f32, q.back_mirror as f32]);
-        if !items.fits(Some(q.bbox)) { return None; }
+        if !items.fits(Some(q.bbox)) {
+            return None;
+        }
         items.push(Some(q.bbox), &rec);
     }
 

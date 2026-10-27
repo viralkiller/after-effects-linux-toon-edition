@@ -55,7 +55,9 @@ mod classic3d;
 mod context;
 pub mod deferred;
 mod effects;
+mod fx_cardwipe;
 mod fx_color;
+mod fx_curlnoise;
 mod fx_depth;
 mod fx_distort;
 mod fx_extra;
@@ -65,9 +67,7 @@ mod fx_key;
 mod fx_light;
 mod fx_lut;
 mod fx_noise;
-mod fx_curlnoise;
 mod fx_pixel2;
-mod fx_cardwipe;
 mod fx_stylize;
 mod fx_text;
 mod fx_time;
@@ -400,6 +400,8 @@ mod tests_deferred;
 #[cfg(test)]
 mod tests_deferred_jobs;
 #[cfg(test)]
+mod tests_fx_cardwipe;
+#[cfg(test)]
 mod tests_fx_color;
 #[cfg(test)]
 mod tests_fx_depth;
@@ -421,8 +423,6 @@ mod tests_fx_lut;
 mod tests_fx_noise;
 #[cfg(test)]
 mod tests_fx_pixel2;
-#[cfg(test)]
-mod tests_fx_cardwipe;
 #[cfg(test)]
 mod tests_fx_stylize;
 #[cfg(test)]

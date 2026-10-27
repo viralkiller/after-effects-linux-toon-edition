@@ -744,9 +744,7 @@ static TOOLS: &[ToolDef] = &[
         name: "open_project",
         description: "Open a project: `path` to an .ecproj file or `new: true` for an empty project. Returns the project overview.",
         bridge_only: false,
-        schema: || {
-            schema(json!({"path": {"type": "string", "description": "Path of an .ecproj file."}, "new": {"type": "boolean"}}), &[])
-        },
+        schema: || schema(json!({"path": {"type": "string", "description": "Path of an .ecproj file."}, "new": {"type": "boolean"}}), &[]),
         run: open_project,
     },
     ToolDef {

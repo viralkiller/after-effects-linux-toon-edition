@@ -47,4 +47,3 @@ pub fn create_nulls(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     ui.data_mut(|d| d.insert_temp(loop_id, looping));
     run(app, &ctx, acts);
 }
-

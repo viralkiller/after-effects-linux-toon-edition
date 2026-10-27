@@ -746,8 +746,13 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
         app.set_viewer_resolution(resolution)?;
         return Ok(Value::Null);
     }
-    if id == "view.res.custom" && let Some(n) = p.get("factor").and_then(Value::as_u64) {
-        let resolution = match n.clamp(1, 40) { 1 => Resolution::Full, n => Resolution::Custom(n as u8) };
+    if id == "view.res.custom"
+        && let Some(n) = p.get("factor").and_then(Value::as_u64)
+    {
+        let resolution = match n.clamp(1, 40) {
+            1 => Resolution::Full,
+            n => Resolution::Custom(n as u8),
+        };
         app.set_viewer_resolution(resolution)?;
         return Ok(Value::Null);
     }
@@ -1220,7 +1225,7 @@ fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Res
     }
     const MEDIA: &[&str] = &[
         "mp4", "mov", "m4v", "mkv", "webm", "png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "exr", "wav", "aif", "aiff", "mp3", "flac", "ogg",
-        "opus", "svg", "pdf", "ai", "eps", "psd", "psb", "gltf", "glb", "obj", "json", "csv", "tsv",
+        "opus", "svg", "pdf", "ai", "eps", "psd", "psb", "xcf", "gltf", "glb", "obj", "json", "csv", "tsv",
     ];
     // A host whose modal dialogs would run a nested event loop inside this frame (macOS: a
     // drag over the window then re-entered winit's event handler and aborted, #511) shows the

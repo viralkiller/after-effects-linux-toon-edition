@@ -141,13 +141,13 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: PanelKind, rect: Rec
         PanelKind::Audio => misc::audio(app, ui, rect),
         PanelKind::History => misc::history(app, ui, rect),
         PanelKind::Markers => misc::markers(app, ui, rect),
-        PanelKind::MaskInterpolation => {},
+        PanelKind::MaskInterpolation => {}
         PanelKind::ScriptConsole => script_console::show(app, ui, rect),
         PanelKind::Wiggler => anim_tools::wiggler(app, ui, rect),
         PanelKind::Smoother => anim_tools::smoother(app, ui, rect),
         PanelKind::MotionSketch => anim_tools::motion_sketch(app, ui, rect),
         PanelKind::RenderQueue => render_queue::show(app, ui, rect),
-        PanelKind::Tracker => {},
+        PanelKind::Tracker => {}
         PanelKind::Layer => layer_panel::show(app, ui, rect),
         PanelKind::Paint => paint_panels::paint(app, ui, rect),
         PanelKind::Brushes => paint_panels::brushes(app, ui, rect),
@@ -156,9 +156,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: PanelKind, rect: Rec
         PanelKind::Flowchart => flowchart::show(app, ui, rect),
         PanelKind::LumetriScopes => scopes_panel::show(app, ui, rect),
         PanelKind::Footage => footage_panel::show(app, ui, rect),
-        PanelKind::MediaBrowser | PanelKind::VrCompEditor => {},
+        PanelKind::MediaBrowser | PanelKind::VrCompEditor => {}
         PanelKind::Progress => media_panels::progress(app, ui, rect),
-        PanelKind::ContentAwareFill => {},
+        PanelKind::ContentAwareFill => {}
         PanelKind::CreateNullsFromPaths => path_vr_panels::create_nulls(app, ui, rect),
     }
 }

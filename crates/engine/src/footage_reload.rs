@@ -86,6 +86,34 @@ fn refreshed(s: &Session, f: &Footage, probed: Footage) -> Footage {
         nf.data = probed.data;
     }
     let (mut w, mut h) = (probed.width, probed.height);
+    if nf.codec == "XCF"
+        && let Some(l) = &f.layer
+    {
+        let found = s.services.read_file(&f.path).ok().and_then(|bytes| {
+            let doc = effectcraft_xcf::Document::parse(&bytes).ok()?;
+            let index = doc.find_layer(l.xcf_tattoo, &l.name).ok()?;
+            let source = doc.layers.get(index)?;
+            Some((index as u32, source.name.clone(), source.tattoo, source.width, source.height))
+        });
+        match found {
+            Some((index, name, tattoo, lw, lh)) => {
+                if let Some(nl) = &mut nf.layer {
+                    nl.index = index;
+                    nl.name = name;
+                    nl.xcf_tattoo = tattoo;
+                }
+                if l.layer_size {
+                    (w, h) = (lw, lh);
+                }
+            }
+            None => {
+                nf.missing = true;
+                (w, h) = (f.width, f.height);
+            }
+        }
+        (nf.width, nf.height) = (w, h);
+        return nf;
+    }
     match &f.layer {
         // A smart object's size is its embedded file's, recorded at import.
         Some(l) if l.embedded.is_some() => (w, h) = (f.width, f.height),

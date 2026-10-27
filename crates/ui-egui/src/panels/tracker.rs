@@ -359,9 +359,7 @@ fn mask_mode(app: &mut EffectcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, p
     p.text(pos2(field_x, y + 10.0), Align2::LEFT_CENTER, name, Tokens::ui(12.0), t.text);
     y += ROW;
     label(p, pos2(x0, y + 10.0), "Method:", &t);
-    let method = if app.session.state.mask_track_method.is_face() {
-        MaskMethod::PositionScaleRotation
-    } else { app.session.state.mask_track_method };
+    let method = if app.session.state.mask_track_method.is_face() { MaskMethod::PositionScaleRotation } else { app.session.state.mask_track_method };
     app.session.state.mask_track_method = method;
     let dd = Rect::from_min_size(pos2(field_x, y), vec2(field_w, 20.0));
     let did = egui::Id::new("tracker-mask-method-dd");
@@ -811,6 +809,8 @@ pub fn drag_params(d: &Drag, cpt: [f64; 2]) -> serde_json::Value {
 
 /// The tracked layer and tracker the viewer shows widgets for.
 pub fn viewer_track(app: &EffectcraftApp) -> Option<(LayerId, Uid)> {
-    if effectcraft_engine::feature_policy::removed_command("track.motion") { return None; }
+    if effectcraft_engine::feature_policy::removed_command("track.motion") {
+        return None;
+    }
     current(app)
 }

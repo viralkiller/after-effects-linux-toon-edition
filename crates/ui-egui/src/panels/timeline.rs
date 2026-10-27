@@ -2073,12 +2073,17 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     }
                     app.auto.add(&format!("timeline.layer.{}.bar", layer.id.0), bar, &layer.name);
                     // Interactions: move body, trim edges.
-                    let edge_w = 6.0;
-                    let body = ui.interact(bar.shrink2(vec2(edge_w, 0.0)), egui::Id::new(("bar", layer.id.0)), Sense::click_and_drag());
-                    let (in_r, out_r) =
-                        (Rect::from_min_max(bar.min, pos2(bar.min.x + edge_w, bar.max.y)), Rect::from_min_max(pos2(bar.max.x - edge_w, bar.min.y), bar.max));
-                    let lin = ui.interact(in_r, egui::Id::new(("bar-in", layer.id.0)), Sense::drag());
-                    let lout = ui.interact(out_r, egui::Id::new(("bar-out", layer.id.0)), Sense::drag());
+                    let edge_w: f32 = 6.0;
+                    let inset = edge_w.min(bar.width().max(0.0) * 0.5);
+                    let body = ui.interact(bar.shrink2(vec2(inset, 0.0)), egui::Id::new(("bar", layer.id.0)), Sense::click_and_drag());
+                    // Straddle the visible edge: approaching from outside the bar must also
+                    // advertise trimming. Split tiny bars at their midpoint to avoid overlap.
+                    let in_r = Rect::from_min_max(pos2(bar.min.x - edge_w, bar.min.y), pos2(bar.min.x + inset, bar.max.y)).intersect(right_clip);
+                    let out_r = Rect::from_min_max(pos2(bar.max.x - inset, bar.min.y), pos2(bar.max.x + edge_w, bar.max.y)).intersect(right_clip);
+                    // Claim clicks as well as drags so the background's click-and-drag
+                    // response does not win hover feedback over these narrow handles.
+                    let lin = ui.interact(in_r, egui::Id::new(("bar-in", layer.id.0)), Sense::click_and_drag());
+                    let lout = ui.interact(out_r, egui::Id::new(("bar-out", layer.id.0)), Sense::click_and_drag());
                     app.auto.add(&format!("timeline.layer.{}.bar.in", layer.id.0), in_r, "Trim In");
                     app.auto.add(&format!("timeline.layer.{}.bar.out", layer.id.0), out_r, "Trim Out");
                     if lin.hovered() || lout.hovered() || lin.dragged() || lout.dragged() {
@@ -2591,12 +2596,16 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                                 ("Linear", "keys.interpolation", json!({"interpolation": "linear"})),
                                 ("Bezier", "keys.interpolation", json!({"interpolation": "bezier"})),
                                 ("Auto Bezier", "keys.interpolation", json!({"interpolation": "autoBezier"})),
-                                ("Select All Keys at This Frame", "keys.selectAtTime", json!({
-                                    "layers": if app.session.state.selected_layers.contains(&layer.id) {
-                                        app.session.state.selected_layers.iter().map(|id| id.0).collect::<Vec<_>>()
-                                    } else { vec![layer.id.0] },
-                                    "time": ct.seconds()
-                                })),
+                                (
+                                    "Select All Keys at This Frame",
+                                    "keys.selectAtTime",
+                                    json!({
+                                        "layers": if app.session.state.selected_layers.contains(&layer.id) {
+                                            app.session.state.selected_layers.iter().map(|id| id.0).collect::<Vec<_>>()
+                                        } else { vec![layer.id.0] },
+                                        "time": ct.seconds()
+                                    }),
+                                ),
                                 ("Select All Keyframes", "keys.selectAll", json!({})),
                                 ("Delete", "keys.delete", json!({})),
                             ] {
@@ -3012,7 +3021,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             && let crate::panels::DragPayload::Item(item) = payload.as_ref()
         {
             // Alt-drop replaces the selected layer under the pointer; it never inserts a layer.
-            let target = hit_rows.iter().find(|(r, _)| ptr.y >= r.min.y && ptr.y < r.max.y)
+            let target = hit_rows
+                .iter()
+                .find(|(r, _)| ptr.y >= r.min.y && ptr.y < r.max.y)
                 .filter(|(_, row)| app.session.state.selected_layers.contains(&row.layer))
                 .filter(|(_, row)| comp.layer(row.layer).is_some_and(|l| !l.switches.locked));
             if let Some((row_rect, row)) = target {

@@ -1,16 +1,11 @@
 //! Textured card geometry and rasterization for Card Wipe.
-use effectcraft_raster::{Image, Px};
-use rayon::prelude::*;
 use crate::card3d::{Lighting, Proj};
 use crate::util::unpremul;
 use crate::{Buf, EffectCtx};
+use effectcraft_raster::{Image, Px};
+use rayon::prelude::*;
 const BAND: usize = 16;
-pub(crate) fn raster<T: Sync>(
-    img: &mut Image,
-    items: &[T],
-    bbox: impl Fn(&T) -> Option<[f32; 4]> + Sync,
-    shade: impl Fn(&T, f32, f32) -> Option<Px> + Sync,
-) {
+pub(crate) fn raster<T: Sync>(img: &mut Image, items: &[T], bbox: impl Fn(&T) -> Option<[f32; 4]> + Sync, shade: impl Fn(&T, f32, f32) -> Option<Px> + Sync) {
     let (w, hgt) = (img.width as usize, img.height as usize);
     if w == 0 || hgt == 0 || items.is_empty() {
         return;
@@ -219,8 +214,6 @@ impl Piece {
             depth,
         })
     }
-
-
 
     /// Light the piece (rotation `r`, centre `pos`) with Lighting / Material.
     pub(crate) fn light(&mut self, l: &Lighting, r: &M3, pos: [f64; 3], eye: [f64; 3]) {

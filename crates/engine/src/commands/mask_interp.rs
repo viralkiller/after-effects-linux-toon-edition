@@ -126,12 +126,10 @@ fn has_mask(s: &Session) -> std::result::Result<(), String> {
 
 fn method_p(p: &Value, cmd: &str) -> Result<Option<MaskMethod>> {
     match str_p(p, "method") {
-        Some(m) => MaskMethod::from_name(m).filter(|m| !m.is_face()).map(Some).ok_or_else(|| {
-            bad(
-                cmd,
-                format!("unknown method `{m}` (position|positionScale|positionScaleRotation|positionScaleRotationSkew|perspective)"),
-            )
-        }),
+        Some(m) => MaskMethod::from_name(m)
+            .filter(|m| !m.is_face())
+            .map(Some)
+            .ok_or_else(|| bad(cmd, format!("unknown method `{m}` (position|positionScale|positionScaleRotation|positionScaleRotationSkew|perspective)"))),
         None => Ok(None),
     }
 }

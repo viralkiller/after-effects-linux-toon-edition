@@ -42,6 +42,13 @@ fn is_pdf_like(path: &str, bytes: &[u8]) -> bool {
 
 /// Footage for a Photoshop or vector file (`None` for other formats).
 pub(crate) fn probe(path: &str, bytes: &[u8]) -> Result<Option<Footage>> {
+    if effectcraft_xcf::is_xcf(bytes) || path.to_ascii_lowercase().ends_with(".xcf") {
+        let doc = effectcraft_xcf::Document::parse(bytes).map_err(|e| MediaError::Decode(format!("{path}: {e}")))?;
+        let mut f = crate::probe::still_footage(path, doc.width, doc.height, image::ImageFormat::Png, true);
+        f.codec = "XCF".into();
+        f.alpha = AlphaMode::Straight;
+        return Ok(Some(f));
+    }
     if effectcraft_psd::is_psd(bytes) {
         let psd = effectcraft_psd::Psd::parse(bytes.to_vec()).map_err(|e| MediaError::Decode(format!("{path}: {e}")))?;
         let mut f = crate::probe::still_footage(path, psd.width, psd.height, image::ImageFormat::Png, true);
@@ -70,6 +77,15 @@ pub(crate) fn probe(path: &str, bytes: &[u8]) -> Result<Option<Footage>> {
 
 /// Decode a Photoshop or SVG still (`None` for other formats).
 pub(crate) fn decode(path: &str, bytes: &[u8], footage: &Footage, op: AlphaOp) -> Result<Option<Image>> {
+    if effectcraft_xcf::is_xcf(bytes) || path.to_ascii_lowercase().ends_with(".xcf") {
+        let doc = effectcraft_xcf::Document::parse(bytes).map_err(|e| MediaError::Decode(format!("{path}: {e}")))?;
+        let px = match &footage.layer {
+            Some(l) => doc.find_layer(l.xcf_tattoo, &l.name).and_then(|i| doc.layer_pixels(i, !l.layer_size)),
+            None => doc.composite(),
+        }
+        .map_err(|e| MediaError::Decode(format!("{path}: {e}")))?;
+        return Ok(Some(straight_to_image(px.width, px.height, &px.data, op)));
+    }
     if effectcraft_psd::is_psd(bytes) {
         let psd = effectcraft_psd::Psd::parse(bytes.to_vec()).map_err(|e| MediaError::Decode(format!("{path}: {e}")))?;
         // A smart object's embedded file: an embedded document's merged image, or an image.

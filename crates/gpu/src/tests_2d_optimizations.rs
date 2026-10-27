@@ -87,8 +87,7 @@ fn gpu_layer_effects_avoid_cpu_readback_and_match_cpu() {
 fn half_preview_gate_keeps_hdr_and_motion_accumulation_full_precision() {
     let mut s = Scene::new(BitDepth::Bpc16);
     s.p.comp_mut(s.cid).unwrap().enable_motion_blur = false;
-    let mut opts = effectcraft_render::RenderOpts::default();
-    opts.motion_blur = false;
+    let mut opts = effectcraft_render::RenderOpts { motion_blur: false, ..Default::default() };
     assert!(preview_half_eligible(&Renderer::new(&s.p, &Pattern, opts), s.cid, 0));
     s.p.settings.bit_depth = BitDepth::Bpc32;
     assert!(!preview_half_eligible(&Renderer::new(&s.p, &Pattern, opts), s.cid, 0));

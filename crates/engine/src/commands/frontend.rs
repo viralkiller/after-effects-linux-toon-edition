@@ -89,14 +89,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "{panel: project|effectControls|composition|layer|timeline|info|audio|preview|effectsPresets|properties|character|paragraph|align|tracker|wiggler|smoother|motionSketch|paint|brushes|renderQueue|flowchart|history|markers|tools|lumetriScopes|footage|mediaBrowser|metadata|progress|contentAwareFill|createNullsFromPaths|vrCompEditor}",
             always
         ),
-        fe!(
-            "window.workspace",
-            "Workspace",
-            [],
-            None,
-            "{name: Default|Standard|Small Screen|Animation|Effects|Paint|Text|Minimal|All Panels}",
-            always
-        ),
+        fe!("window.workspace", "Workspace", [], None, "{name: Default|Standard|Small Screen|Animation|Effects|Paint|Text|Minimal|All Panels}", always),
         fe!("window.saveWorkspace", "Save Changes to this Workspace", ["Window", "Workspace"], None, "{}", always),
         fe!("window.saveWorkspaceAs", "Save as New Workspace...", ["Window", "Workspace"], None, "{name}", always),
         fe!("window.editWorkspaces", "Edit Workspaces...", ["Window", "Workspace"], None, "{name, rename?: new name, delete?: bool}", always),

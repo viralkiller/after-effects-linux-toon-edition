@@ -442,10 +442,12 @@ impl EffectcraftApp {
     /// Persist a viewport resolution choice through the document undo/save path.
     pub(crate) fn set_viewer_resolution(&mut self, resolution: state::Resolution) -> Result<(), String> {
         if self.session.project.viewport_resolution != resolution {
-            self.session.edit("Viewport Resolution", None, |project, _| {
-                project.viewport_resolution = resolution;
-                Ok(())
-            }).map_err(|e| e.to_string())?;
+            self.session
+                .edit("Viewport Resolution", None, |project, _| {
+                    project.viewport_resolution = resolution;
+                    Ok(())
+                })
+                .map_err(|e| e.to_string())?;
         }
         self.ui.viewer.res = resolution;
         Ok(())

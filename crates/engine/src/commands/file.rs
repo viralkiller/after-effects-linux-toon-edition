@@ -173,6 +173,14 @@ fn import_cmd(s: &mut Session, p: &Value) -> Result<Value> {
     let probed = pending.sources.iter().map(|src| pending.prober.probe(src)).collect();
     let mut r = add_footage(s, pending, probed)?;
     finish_import(s, &mut r, target, p);
+    // Layered compositions may finish entirely in prepare_import, without a
+    // background job. Surface their errors here too instead of silently returning.
+    let errors: Vec<&str> = r["errors"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+    if let Some(first) = errors.first() {
+        let message = if errors.len() == 1 { (*first).to_string() } else { format!("{first} (and {} more)", errors.len() - 1) };
+        s.toast(message.clone());
+        r["toast"] = json!(message);
+    }
     Ok(r)
 }
 
@@ -313,6 +321,20 @@ impl Prober {
             (f.width, f.height) = doc.pixel_size();
             f.page = self.page;
         }
+        if let Some(sel) = &self.psd_layer
+            && f.codec == "XCF"
+        {
+            let bytes = self.services.read_file(path).map_err(|e| fail(e.to_string()))?;
+            let doc = effectcraft_xcf::Document::parse(&bytes).map_err(|e| fail(e.to_string()))?;
+            let index = match sel {
+                Value::Number(n) => n.as_u64().and_then(|n| usize::try_from(n).ok()).filter(|i| *i < doc.layers.len()),
+                Value::String(name) => doc.find_layer(None, name).ok(),
+                _ => None,
+            }
+            .ok_or_else(|| fail(format!("no unique XCF layer {sel}")))?;
+            let l = doc.layers.get(index).ok_or_else(|| fail("missing XCF layer".into()))?;
+            f.layer = Some(effectcraft_project::SourceLayer { index: index as u32, name: l.name.clone(), xcf_tattoo: l.tattoo, ..Default::default() });
+        }
         // Choose Layer: one layer of a Photoshop document (document-sized).
         if let Some(sel) = &self.psd_layer
             && f.codec == "PSD"
@@ -324,7 +346,8 @@ impl Prober {
                 .and_then(|b| effectcraft_psd::Psd::parse(b).ok())
                 .and_then(|d| find_psd_layer(&d, sel))
                 .ok_or_else(|| fail(format!("no layer {sel}")))?;
-            f.layer = Some(effectcraft_project::SourceLayer { index: index as u32, name, layer_size: false, embedded: None, placed: false });
+            f.layer =
+                Some(effectcraft_project::SourceLayer { index: index as u32, name, layer_size: false, embedded: None, placed: false, ..Default::default() });
         }
         Ok(Probed { name, footage: f, ask_alpha, warning })
     }
@@ -369,6 +392,17 @@ fn prepare_import(s: &mut Session, p: &Value) -> Result<PendingImport> {
         let mut rest = vec![];
         for path in paths {
             let bytes = match s.services.read_file(&path) {
+                Ok(b) if effectcraft_xcf::is_xcf(&b) || path.to_ascii_lowercase().ends_with(".xcf") => {
+                    match import_xcf_comp(s, &path, &b, retain) {
+                        Ok((comp, made, warnings)) => {
+                            comps.push(comp);
+                            items.extend(made);
+                            errors.extend(warnings);
+                        }
+                        Err(e) => errors.push(format!("{path}: {e}")),
+                    }
+                    continue;
+                }
                 Ok(b) if effectcraft_psd::is_psd(&b) => b,
                 Ok(b) if effectcraft_pdf::sniff(&b).is_some() && !path.to_ascii_lowercase().ends_with(".svg") => {
                     // PDF / Illustrator / EPS: one layer per file layer.
@@ -480,7 +514,9 @@ fn add_footage(s: &mut Session, pending: PendingImport, probed: Vec<std::result:
 /// definition, OpenEXR premultiplied); TGA, TIFF and movies with alpha don't.
 fn alpha_is_labeled(path: &str, codec: &str) -> bool {
     let ext = std::path::Path::new(path).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-    matches!(ext.as_str(), "png" | "gif" | "webp" | "psd" | "psb" | "exr" | "svg" | "jpg" | "jpeg" | "ai" | "pdf" | "eps") || codec.eq_ignore_ascii_case("PSD")
+    matches!(ext.as_str(), "png" | "gif" | "webp" | "psd" | "psb" | "xcf" | "exr" | "svg" | "jpg" | "jpeg" | "ai" | "pdf" | "eps")
+        || codec.eq_ignore_ascii_case("PSD")
+        || codec.eq_ignore_ascii_case("XCF")
 }
 
 /// A Photoshop layer by index or name (pixel layers only).
@@ -491,6 +527,30 @@ fn find_psd_layer(d: &effectcraft_psd::Psd, sel: &Value) -> Option<(usize, Strin
         _ => return None,
     };
     Some((l.index, l.name.clone()))
+}
+
+/// Validate plain XCF pixels before making any project changes.
+fn import_xcf_comp(s: &mut Session, path: &str, bytes: &[u8], retain: bool) -> Result<(u64, Vec<u64>, Vec<String>)> {
+    let doc = effectcraft_xcf::Document::parse(bytes).map_err(|e| EngineError::Other(e.to_string()))?;
+    doc.validate_pixels().map_err(|e| EngineError::Other(e.to_string()))?;
+    for l in &doc.layers {
+        doc.find_layer(l.tattoo, &l.name).map_err(|e| EngineError::Other(e.to_string()))?;
+    }
+    let name = std::path::Path::new(path).file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "GIMP".into());
+    let rate = effectcraft_time::FrameRate::FPS_29_97;
+    let secs = if s.prefs.import.still_footage == "seconds" { s.prefs.import.still_seconds } else { 10.0 };
+    let duration = rate.snap_nearest(effectcraft_time::Tick::from_seconds_f64(secs));
+    let r = s.edit("Import XCF", None, |proj, st| {
+        let r = crate::xcf_import::import(proj, &doc, path, &name, retain, rate, duration);
+        st.project_selection = vec![r.comp];
+        Ok(r)
+    })?;
+    for message in &r.warnings {
+        s.events.push(crate::Event::Toast { message: message.clone(), error: false });
+    }
+    let mut items = vec![r.folder.0];
+    items.extend(r.items.iter().map(|i| i.0));
+    Ok((r.comp.0, items, r.warnings))
 }
 
 /// Import a Photoshop document as a composition (one undo step). Returns (comp, items, warnings).

@@ -104,9 +104,9 @@ pub use time_fx::{PixelMotion, TimewarpPlan, TwStep, posterized_time, time_frame
 // effectcraft-gpu fx_tone.
 pub use ocio::color_stabilizer_maps;
 // GPU effects, part B (3D Channel, Immersive Video, colour management, card rendering).
+pub use card_pieces::{Piece, PiecePlan, PieceTex, piece_plan};
 pub use channel3d::{CRYPTO_LAYERS, id_color, selection_hashes};
 pub use ocio::{ColorOp, Straight, Tf, color_program};
-pub use card_pieces::{Piece, PiecePlan, PieceTex, piece_plan};
 pub use utility::{Lut, load_lut};
 pub use vr::{equi_dir as vr_equi_dir, rotation as vr_rotation};
 
@@ -336,7 +336,6 @@ pub trait EffectHost: Sync {
     fn params_at(&self, _layer_time: f64) -> Option<Params> {
         None
     }
-
 }
 
 /// Extra context the renderer may supply (all optional; `Default` is "nothing known").
@@ -543,7 +542,6 @@ fn toon_catalogue_legacy_only(id: &str) -> bool {
             | "ec.key.innerouter"
             | "ec.key.keycleaner"
             | "ec.key.screen"
-            | "ec.keying.keylight"
             | "ec.stylize.ccglass"
             | "ec.stylize.ccplastic"
             | "ec.perspective.bevelalpha"
@@ -1198,6 +1196,18 @@ pub(crate) fn run_fx(id: &str, vals: &[(&str, Value)], img: Image, time: f64, en
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn toon_keylight_is_visible_and_searchable() {
+        let id = "ec.keying.keylight";
+        assert!(!legacy_only(id));
+        let spec = all().into_iter().find(|s| s.id == id).expect("Key Light in effects menu");
+        assert_eq!(spec.category, "Keying");
+        for name in ["Key Light", "Keylight", "Keylight (1.2)"] {
+            assert_eq!(lookup(name).map(|s| s.id), Some(id));
+            assert!(name_matches(spec, &name.to_lowercase()));
+        }
+    }
 
     #[test]
     fn toon_catalog_has_no_simulations_and_keeps_shared_effects() {

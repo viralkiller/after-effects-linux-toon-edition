@@ -276,8 +276,8 @@ fn cache_frames_when_idle_survives_an_inverted_work_area() {
 
 #[test]
 fn toon_preview_defaults_and_project_restore() {
-    use effectcraft_engine::project::{Project, preview::ViewportResolution};
     use effectcraft_engine::preview::PreviewResolution;
+    use effectcraft_engine::project::{Project, preview::ViewportResolution};
     let mut h = harness();
     assert!(!h.state().session.state.snapping);
     assert_eq!(h.state().viewer_scale(1.0, 1.0), 0.5);

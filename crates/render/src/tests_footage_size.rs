@@ -81,3 +81,25 @@ fn reduced_renders_take_footage_resampled_by_the_source() {
     Renderer::new(&p, &sized, RenderOpts { scale: 0.5, ..Default::default() }).comp_frame(cid, Tick::ZERO);
     assert!(sized.sizes.unwrap().into_inner().unwrap().is_empty());
 }
+
+#[test]
+fn changed_source_bounds_keep_export_proportions_in_half_preview() {
+    struct Changed(u32, u32);
+    impl FootageSource for Changed {
+        fn frame(&self, _: ItemId, _: &Footage, _: Tick) -> Option<Arc<Image>> {
+            Some(Arc::new(Image::filled(self.0, self.1, [0.25, 0.5, 0.75, 1.0])))
+        }
+    }
+    let (p, cid) = project(BitDepth::Bpc32, false);
+    let comp = p.comp(cid).unwrap();
+    let layer = &comp.layers[0];
+    for (w, h) in [(144, 27), (96, 108), (48, 54)] {
+        let source = Changed(w, h);
+        let ctx = crate::EvalCtx { project: &p, comp_id: cid, comp, time: Tick::ZERO, expr: None, footage: Some(&source) };
+        let export = Renderer::new(&p, &source, RenderOpts::default()).layer_source(&ctx, layer).unwrap();
+        let preview = Renderer::new(&p, &source, RenderOpts { scale: 0.5, ..Default::default() }).layer_source(&ctx, layer).unwrap();
+        assert_eq!(preview.img.width as f64 / preview.scale, export.img.width as f64 / export.scale);
+        assert_eq!(preview.img.height as f64 / preview.scale, export.img.height as f64 / export.scale);
+        assert_eq!(preview.offset, export.offset);
+    }
+}

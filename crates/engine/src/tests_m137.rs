@@ -130,4 +130,3 @@ fn trace_path_adds_a_progress_null() {
     assert_eq!(null.props.group("effects/#1").unwrap().name, "Progress");
     assert!(null.props.prop("transform/position").unwrap().expr.as_ref().unwrap().text.contains("pointOnPath(effect(\"Progress\")(\"Slider\") / 100)"));
 }
-

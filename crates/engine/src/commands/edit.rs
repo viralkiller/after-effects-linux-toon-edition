@@ -223,10 +223,7 @@ fn copy(s: &mut Session, p: &Value) -> Result<Value> {
     }
     // An explicit key selection wins over highlighted property rows. Otherwise stale rows
     // can silently add unrelated keys or values to a multi-property copy.
-    if !s.state.selected_keys.is_empty()
-        && s.state.keys_selected_directly
-        && p.get("layers").is_none()
-    {
+    if !s.state.selected_keys.is_empty() && s.state.keys_selected_directly && p.get("layers").is_none() {
         return s.execute("keys.copy", json!({}));
     }
     if p.get("layers").is_none()

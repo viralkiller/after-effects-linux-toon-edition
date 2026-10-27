@@ -277,7 +277,8 @@ pub enum ViewportResolution {
 }
 
 impl ViewportResolution {
-    pub const ALL: [ViewportResolution; 5] = [ViewportResolution::Auto, ViewportResolution::Full, ViewportResolution::Half, ViewportResolution::Third, ViewportResolution::Quarter];
+    pub const ALL: [ViewportResolution; 5] =
+        [ViewportResolution::Auto, ViewportResolution::Full, ViewportResolution::Half, ViewportResolution::Third, ViewportResolution::Quarter];
     pub fn label(self) -> &'static str {
         match self {
             ViewportResolution::Auto => "Auto",
@@ -329,8 +330,7 @@ mod tests {
 
     #[test]
     fn project_roundtrip_preserves_independent_preview_choices() {
-        let mut project = Project::default();
-        project.viewport_resolution = ViewportResolution::Custom(3);
+        let mut project = Project { viewport_resolution: ViewportResolution::Custom(3), ..Default::default() };
         project.preview.spacebar.resolution = PreviewResolution::Full;
         project.preview.numpad0.resolution = PreviewResolution::Quarter;
         let restored = Project::from_json(&project.to_json()).unwrap();

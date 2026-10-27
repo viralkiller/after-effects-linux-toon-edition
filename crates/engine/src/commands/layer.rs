@@ -310,8 +310,7 @@ fn replace_source(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let item = match p.get("item") {
         Some(Value::Number(n)) => ItemId(n.as_u64().ok_or_else(|| bad("layer.replaceSource", "invalid item id"))?),
-        Some(Value::String(name)) => s.project.find_by_name(name).map(|it| it.id)
-            .ok_or_else(|| bad("layer.replaceSource", format!("no item `{name}`")))?,
+        Some(Value::String(name)) => s.project.find_by_name(name).map(|it| it.id).ok_or_else(|| bad("layer.replaceSource", format!("no item `{name}`")))?,
         _ => return Err(bad("layer.replaceSource", "missing `item`")),
     };
     let source = match &s.project.item(item).ok_or_else(|| bad("layer.replaceSource", "no such item"))?.kind {
@@ -329,7 +328,9 @@ fn replace_source(s: &mut Session, p: &Value) -> Result<Value> {
         if next == cid {
             return Err(bad("layer.replaceSource", "replacement would create a composition cycle"));
         }
-        if seen.insert(next) && let Some(comp) = s.project.comp(next) {
+        if seen.insert(next)
+            && let Some(comp) = s.project.comp(next)
+        {
             for layer in &comp.layers {
                 if let LayerSource::Comp { item } = layer.source {
                     pending.push(item);

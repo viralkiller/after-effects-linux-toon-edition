@@ -1,10 +1,12 @@
 //! GPU Curl Noise potential and streamline tracing.
-use effectcraft_effects::EffectCtx;
 use crate::context::{Enc, Params};
 use crate::effects::GBuf;
+use effectcraft_effects::EffectCtx;
 pub(crate) const IDS: &[&str] = &["ec.noise.curlnoise"];
 pub(crate) const KERNELS: &[&str] = &["fxp_curl_pot", "fxp_curl_vel", "fxp_curl_view", "fxp_curl_flow"];
-pub(crate) fn apply(e: &mut Enc, _id: &str, ctx: &EffectCtx, b: GBuf) -> Option<GBuf> { curl_noise(e, ctx, b) }
+pub(crate) fn apply(e: &mut Enc, _id: &str, ctx: &EffectCtx, b: GBuf) -> Option<GBuf> {
+    curl_noise(e, ctx, b)
+}
 fn curl_noise(e: &mut Enc, ctx: &EffectCtx, b: GBuf) -> Option<GBuf> {
     let pr = ctx.params;
     let amount = pr.f("displacementAmount") * b.scale;

@@ -29,7 +29,8 @@ fn random_comp(s: &mut Session) -> ItemId {
         s.execute("layer.newSolid", json!({"name": name, "color": color, "width": 480, "height": 270})).unwrap()["layer"].as_u64().unwrap()
     };
     let a = solid(s, "Grain", "#000000");
-    for fx in ["ec.noise.addgrain"] {
+    {
+        let fx = "ec.noise.addgrain";
         s.execute("effect.apply", json!({"layer": a, "effect": fx})).unwrap();
     }
     let b = solid(s, "Noise", "#336699");

@@ -44,13 +44,8 @@ pub enum MaskMethod {
 }
 
 impl MaskMethod {
-    pub const ALL: [MaskMethod; 5] = [
-        MaskMethod::Position,
-        MaskMethod::PositionScale,
-        MaskMethod::PositionScaleRotation,
-        MaskMethod::PositionScaleRotationSkew,
-        MaskMethod::Perspective,
-    ];
+    pub const ALL: [MaskMethod; 5] =
+        [MaskMethod::Position, MaskMethod::PositionScale, MaskMethod::PositionScaleRotation, MaskMethod::PositionScaleRotationSkew, MaskMethod::Perspective];
     pub fn label(self) -> &'static str {
         match self {
             MaskMethod::Position => "Position",

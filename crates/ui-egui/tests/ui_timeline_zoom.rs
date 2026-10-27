@@ -404,3 +404,29 @@ fn the_timeline_follows_the_cti_past_its_edges() {
     let (s4, e4) = visible(&h);
     assert!(s4 > s3 && cti >= s4 && cti <= e4, "paged from {s3}..{e3} to {s4}..{e4} for the CTI at {cti}");
 }
+
+#[test]
+fn trim_edges_show_resize_cursor_from_both_sides_and_during_drag() {
+    let (mut h, id) = harness();
+    h.state_mut().session.execute("layer.timing", json!({"layers": [id], "in": 1.0, "out": 3.0})).unwrap();
+    h.run_steps(3);
+    let e = h.state().auto.find(&format!("timeline.layer.{id}.bar")).unwrap().clone();
+    let y = e.rect[1] + e.rect[3] / 2.0;
+    for x in [e.rect[0] - 3.0, e.rect[0] + 3.0, e.rect[0] + e.rect[2] - 3.0, e.rect[0] + e.rect[2] + 3.0] {
+        h.event(Event::PointerMoved(pos2(x, y)));
+        h.run_steps(2);
+        assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::ResizeHorizontal);
+    }
+    let at = pos2(e.rect[0] + e.rect[2] + 3.0, y);
+    h.event(Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+    h.step();
+    let to = at - vec2(30.0, 0.0);
+    h.event(Event::PointerMoved(to));
+    h.run_steps(2);
+    assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::ResizeHorizontal);
+    h.event(Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+    h.run_steps(2);
+    let layer = h.state().session.active_comp().unwrap().layer(effectcraft_engine::project::LayerId(id)).unwrap();
+    assert!(layer.out_point.seconds() < 3.0);
+    assert_eq!(layer.in_point.seconds(), 1.0);
+}

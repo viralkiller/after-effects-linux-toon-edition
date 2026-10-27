@@ -225,7 +225,9 @@ pub fn handle(app: &mut EffectcraftApp, ctx: &egui::Context, req: &ControlReques
                 }
                 if let Some(r) = v.get("res").and_then(Value::as_str) {
                     let resolution = Resolution::ALL.into_iter().find(|x| x.label().eq_ignore_ascii_case(r)).unwrap_or(app.ui.viewer.res);
-                    if let Err(e) = app.set_viewer_resolution(resolution) { return err(e); }
+                    if let Err(e) = app.set_viewer_resolution(resolution) {
+                        return err(e);
+                    }
                 }
                 if let Some(Value::Array(a)) = v.get("pan") {
                     app.ui.viewer.pan = [a.first().and_then(Value::as_f64).unwrap_or(0.0) as f32, a.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32];

@@ -683,19 +683,14 @@ fn list_fonts_lists_families_with_styles() {
     assert!(mono["styles"].as_array().unwrap().contains(&json!("Regular")), "{one}");
 }
 
-/// Trained models over MCP (Roto Brush and face tracking): listed with their authors and
-/// licence, chosen, refused when unknown.
+/// Removed Roto Brush and face model commands remain unavailable over MCP.
 #[test]
 fn trained_models_over_mcp() {
     let mut s = server();
-    for (prefix, id) in [("roto", "mobilesam"), ("face", "mediapipe-face")] {
-        let list = call_json(&mut s, "execute_command", json!({"command": format!("{prefix}.models"), "params": {}}));
-        let models = list["models"].as_array().unwrap();
-        assert!(models.iter().any(|m| m["id"] == id && m["licence"] == "Apache-2.0" && m["authors"].is_string() && m["installed"] == false), "{list}");
-        let r = call_json(&mut s, "execute_command", json!({"command": format!("{prefix}.model.select"), "params": {"id": id}}));
-        assert_eq!(r["model"], id);
-        let (c, err) = call(&mut s, "execute_command", json!({"command": format!("{prefix}.model.select"), "params": {"id": "nope"}}));
-        assert!(err && c[0]["text"].as_str().unwrap().contains("unknown model"), "{c:?}");
+    for command in ["roto.models", "roto.model.select", "face.models", "face.model.select"] {
+        let (content, error) = call(&mut s, "execute_command", json!({"command": command, "params": {"id": "nope"}}));
+        assert!(error, "{command} should be unavailable");
+        assert!(content.iter().any(|v| v["text"].as_str().is_some_and(|t| t.contains("has been removed from this fork"))), "{command}: {content:?}");
     }
 }
 

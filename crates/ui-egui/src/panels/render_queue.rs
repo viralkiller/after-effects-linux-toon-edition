@@ -405,12 +405,7 @@ fn pick_output(app: &EffectcraftApp, it: &RenderQueueItem) -> Option<Option<Stri
     // the legacy save hook directly bypasses the Linux window-parent fix.
     if let Some(spawn) = &app.hooks.file_dialog_async {
         let tx = app.dialog_answers.0.clone();
-        let answer = crate::DialogAnswer {
-            command: "renderQueue.setOutput".into(),
-            key: "path",
-            params: json!({"item": it.id}),
-            paths: Vec::new(),
-        };
+        let answer = crate::DialogAnswer { command: "renderQueue.setOutput".into(), key: "path", params: json!({"item": it.id}), paths: Vec::new() };
         spawn(
             crate::FileDialog::save(&default),
             Box::new(move |paths| {

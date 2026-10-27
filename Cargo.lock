@@ -1247,6 +1247,7 @@ dependencies = [
  "effectcraft-text",
  "effectcraft-time",
  "effectcraft-track",
+ "effectcraft-xcf",
  "exr",
  "image",
  "kurbo",
@@ -1426,6 +1427,7 @@ dependencies = [
  "effectcraft-render",
  "effectcraft-svg",
  "effectcraft-time",
+ "effectcraft-xcf",
  "exr",
  "filmcraft-codecs",
  "filmcraft-color",
@@ -1672,6 +1674,14 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "web-time",
+]
+
+[[package]]
+name = "effectcraft-xcf"
+version = "0.8.0"
+dependencies = [
+ "effectcraft-color",
+ "miniz_oxide 0.8.9",
 ]
 
 [[package]]

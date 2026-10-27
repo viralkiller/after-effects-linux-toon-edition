@@ -295,4 +295,3 @@ pub fn sketch_overlay(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
         }
     }
 }
-
