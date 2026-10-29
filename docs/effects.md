@@ -3,11 +3,11 @@
 <!-- Generated from the effect registry (crates/effects/src/catalog.rs); do not edit by hand.
      Regenerate: UPDATE_DOCS=1 cargo test -p effectcraft-effects --lib effects_doc_is_current -->
 
-EffectCraft ships 306 effects with 3014 parameters in total, grouped into the same categories as the Effects & Presets panel. Every effect is our own implementation, written from public behaviour descriptions and standard image-processing literature. Parameter names, order, popup options, units, defaults and ranges follow the reference application so that projects, expressions and muscle memory carry over.
+EffectCraft ships 288 effects with 2524 parameters in total, grouped into the same categories as the Effects & Presets panel. Every effect is our own implementation, written from public behaviour descriptions and standard image-processing literature. Parameter names, order, popup options, units, defaults and ranges follow the reference application so that projects, expressions and muscle memory carry over.
 
-- **GPU**: 280 effects also run on the GPU compositor with identical results.
-- **32**: 306 effects process 32-bit float (HDR, overbright) pixels without clamping.
-- **Status**: 306 implemented in full, 0 partial (what is missing is listed).
+- **GPU**: 262 effects also run on the GPU compositor with identical results.
+- **32**: 288 effects process 32-bit float (HDR, overbright) pixels without clamping.
+- **Status**: 288 implemented in full, 0 partial (what is missing is listed).
 
 Effects are addressed by id (`ec.<category>.<name>`) or display name in commands, scripts and the control channel, and every parameter by its id (`effects/#1/blurriness`).
 
@@ -312,10 +312,6 @@ Effects are addressed by id (`ec.<category>.<name>`) or display name in commands
 | CC Spotlight | `ec.perspective.ccspotlight` | 8 | GPU | 32 | Implemented |
 | Drop Shadow | `ec.perspective.dropshadow` | 6 | GPU | 32 | Implemented |
 | Radial Shadow | `ec.perspective.radialshadow` | 9 | GPU | 32 | Implemented |
-
-## Simulation
-
-Removed from Toon Edition, including CPU/GPU implementations and particle caches.
 
 ## Stylize
 

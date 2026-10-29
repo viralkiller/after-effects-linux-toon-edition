@@ -198,8 +198,8 @@ enum Gesture {
 }
 
 /// Pen tool path in progress: (layer, mask uid).
-fn pen_id() -> egui::Id {
-    egui::Id::new("viewer-pen")
+fn pen_id(comp: effectcraft_engine::project::ItemId) -> egui::Id {
+    egui::Id::new(("viewer-pen", comp.0))
 }
 
 use super::viewer_overlays::{self as ov, VertexHit};
@@ -878,13 +878,20 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     // Pen path in progress ends when the tool changes or its mask is gone; Esc / Enter also end
     // free transform.
     let finish = ui.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Enter)) && !ctx.egui_wants_keyboard_input();
-    if app.ui.tool != Tool::Pen || finish {
-        ui.data_mut(|d| d.remove::<(LayerId, u64)>(pen_id()));
+    let pen_valid = ui.data(|d| d.get_temp::<(LayerId, u64)>(pen_id(ectx.comp_id))).is_none_or(|(lid, uid)| {
+        selected.contains(&lid)
+            && comp.layer(lid).is_some_and(|l| !l.switches.locked && l.is_active_at(time))
+            && ov::path_of(&ectx, lid, uid).is_some_and(|p| !p.sp.closed)
+    });
+    if app.ui.tool != Tool::Pen || finish || !pen_valid {
+        ui.data_mut(|d| d.remove::<(LayerId, u64)>(pen_id(ectx.comp_id)));
     }
     if finish || app.ui.tool != Tool::Selection {
         ov::end_free_transform(&ctx);
     }
-    if app.layer_controls_visible() {
+    // Path tools must show what they edit, even when passive overlays are hidden.
+    let editing_paths = !app.playback.playing && (app.ui.tool.is_pen() || app.ui.tool.is_shape());
+    if app.layer_controls_visible() || editing_paths {
         // Settings ▸ General ▸ Path Point and Handle Size; Appearance ▸ Use Label Color for
         // Layer Handles and Paths.
         let hs = app.session.prefs.general.path_point_size as f32 + 2.0;
@@ -894,8 +901,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             // Motion path of animated position (keyframes and spatial tangents are draggable).
             ov::motion_path(app, &painter, &map, &ectx, l, col, &mut key_hits, &mut motion_frames);
             // Masks and shape paths.
-            if app.ui.viewer.show_masks {
-                let pen = ui.data(|d| d.get_temp::<(LayerId, u64)>(pen_id()));
+            if app.ui.viewer.show_masks || editing_paths {
+                let pen = ui.data(|d| d.get_temp::<(LayerId, u64)>(pen_id(ectx.comp_id)));
                 let hover = ui.input(|i| i.pointer.hover_pos());
                 ov::draw_paths(app, &painter, &map, &ectx, l, col, &sel_vertices, pen, hover, &mut vertex_hits, &mut paths);
             }
@@ -1154,11 +1161,16 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             Tool::Orbit => egui::CursorIcon::Alias,
             Tool::PanCamera => egui::CursorIcon::Move,
             Tool::Dolly => egui::CursorIcon::ResizeVertical,
+            t if (t == Tool::Pen || t.is_shape()) && vertex_hits.iter().any(|h| h.pos.distance(hp) < 6.0) => egui::CursorIcon::Move,
             t if t.is_pen() => {
                 pen_cursor(
                     &ctx,
                     hp,
-                    pen_cursor_icon(t, ov::segment_at(&paths, &map, hp, 5.0).is_some() || ov::motion_frame_at(&motion_frames, &key_hits, hp).is_some()),
+                    pen_cursor_icon(
+                        t,
+                        (ui.input(|i| i.modifiers.ctrl || i.modifiers.command) && ov::segment_at(&paths, &map, hp, 5.0).is_some())
+                            || ov::motion_frame_at(&motion_frames, &key_hits, hp).is_some(),
+                    ),
                 );
                 egui::CursorIcon::None
             }
@@ -1202,6 +1214,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     app.ui.viewer.interacting = resp.dragged();
     let mods = ui.input(|i| i.modifiers);
     let space_pan = super::space_hand(&ctx);
+    let vertex_at = |pos: Pos2, tangents: bool| -> Option<VertexHit> {
+        vertex_hits.iter().rev().filter(|h| h.tangent.is_some() == tangents).find(|h| h.pos.distance(pos) < 6.0).copied()
+    };
     // Pen tool: each press places a vertex (dragging pulls Bezier tangents); pressing on the
     // first vertex closes the path.
     if app.ui.tool == Tool::Pen
@@ -1210,7 +1225,24 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         && ui.input(|i| i.pointer.primary_pressed())
         && let Some(pos) = ui.input(|i| i.pointer.press_origin())
     {
-        pen_press(app, ui, &ectx, &map, &paths, ov::motion_frame_at(&motion_frames, &key_hits, pos), pos, mods);
+        let hit = vertex_at(pos, false);
+        let current = ui.data(|d| d.get_temp::<(LayerId, u64)>(pen_id(ectx.comp_id)));
+        let closes = hit.is_some_and(|h| {
+            current == Some((h.layer, h.mask)) && h.index == 0 && ov::path_of(&ectx, h.layer, h.mask).is_some_and(|p| p.sp.vertices.len() >= 2)
+        });
+        // Toon: ordinary clicks edit existing handles; Ctrl-click a segment inserts.
+        // Vertices take priority over segments so Ctrl-click cannot duplicate a vertex.
+        let on_handle = hit.is_some() || vertex_at(pos, true).is_some();
+        let segment = ov::segment_at(&paths, &map, pos, 5.0);
+        if (mods.command || mods.ctrl) && !mods.alt && !on_handle {
+            if let Some((layer, mask, seg, t)) = segment {
+                if let Err(e) = app.session.execute("mask.insertVertex", json!({"layer": layer.0, "mask": mask, "segment": seg, "t": t})) {
+                    app.ui.status = e.to_string();
+                }
+            }
+        } else if !mods.command && !mods.ctrl && !mods.alt && (closes || (!on_handle && segment.is_none())) {
+            pen_press(app, ui, &ectx, &map, ov::motion_frame_at(&motion_frames, &key_hits, pos), pos, mods);
+        }
     }
     // A pen click (press + release without a drag) ends its tangent gesture on release.
     if ui.input(|i| i.pointer.primary_released())
@@ -1219,9 +1251,6 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     {
         ui.data_mut(|d| d.remove::<Gesture>(egui::Id::new("viewer-gesture")));
     }
-    let vertex_at = |pos: Pos2, tangents: bool| -> Option<VertexHit> {
-        vertex_hits.iter().rev().filter(|h| h.tangent.is_some() == tangents).find(|h| h.pos.distance(pos) < 6.0).copied()
-    };
     // On-canvas text editing (Type tool, double-click a text layer) owns its clicks and drags.
     let text_owns = super::viewer_text::hook(app, ui, &painter, &map, &ectx, &resp, space_pan);
     if resp.drag_started()
@@ -1230,7 +1259,19 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     {
         let cpt = map.to_comp(pos);
         let press = ui.input(|i| i.pointer.press_origin()).unwrap_or(pos);
-        let tool = if space_pan || resp.dragged_by(egui::PointerButton::Middle) { Tool::Hand } else { app.ui.tool };
+        let editing_handle = vertex_at(press, false).is_some() || vertex_at(press, true).is_some();
+        // Keep the tangent gesture of a newly placed point; otherwise existing handles
+        // take priority over both the Pen's new path and a shape tool's new mask.
+        let placing_point = matches!(ui.data(|d| d.get_temp::<Gesture>(gid)), Some(Gesture::Pen { .. }));
+        let tool = if space_pan || resp.dragged_by(egui::PointerButton::Middle) {
+            Tool::Hand
+        } else if app.ui.tool == Tool::Pen && !placing_point && mods.alt && editing_handle {
+            Tool::PenConvert
+        } else if (app.ui.tool == Tool::Pen && !placing_point && (editing_handle || mods.command || mods.ctrl)) || (app.ui.tool.is_shape() && editing_handle) {
+            Tool::Selection
+        } else {
+            app.ui.tool
+        };
         let g = match tool {
             Tool::Hand => Some(Gesture::Pan { start_pan: app.ui.viewer.pan }),
             // Region of Interest armed: the drag draws it.
@@ -1711,7 +1752,20 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 app.ui.viewer.pan = [pan.x, pan.y];
             }
             Tool::Type | Tool::TypeVertical => {}
-            Tool::Pen | Tool::MaskFeather => {}
+            Tool::Pen => {
+                if let Some(h) = vertex_at(pos, false) {
+                    let me = json!({"layer": h.layer.0, "mask": h.mask, "index": h.index});
+                    let result = if mods.alt {
+                        app.session.execute("mask.convertVertex", me)
+                    } else {
+                        app.session.execute("mask.selectVertices", json!({"vertices": [me], "add": mods.shift, "toggle": mods.shift}))
+                    };
+                    if let Err(e) = result {
+                        app.ui.status = e.to_string();
+                    }
+                }
+            }
+            Tool::MaskFeather => {}
             // On a motion path (After Effects): Add Vertex adds a keyframe where it is clicked,
             // Delete Vertex removes the keyframe, Convert Vertex switches it between Linear and
             // Auto Bezier spatial interpolation.
@@ -1974,20 +2028,18 @@ fn pen_cursor(ctx: &egui::Context, at: Pos2, icon: crate::icons::Icon) {
     crate::icons::paint(&painter, rect, icon, Color32::WHITE);
 }
 
-#[allow(clippy::too_many_arguments)]
 fn pen_press(
     app: &mut EffectcraftApp,
     ui: &mut egui::Ui,
     ectx: &EvalCtx,
     map: &ViewerMap,
-    paths: &[ov::PathInfo],
     motion_frame: Option<ov::PathFrame>,
     pos: Pos2,
     mods: egui::Modifiers,
 ) {
     use effectcraft_engine::project::LayerSource;
     let gid = egui::Id::new("viewer-gesture");
-    let current: Option<(LayerId, u64)> = ui.data(|d| d.get_temp(pen_id()));
+    let current: Option<(LayerId, u64)> = ui.data(|d| d.get_temp(pen_id(ectx.comp_id)));
     let c0 = map.to_comp(pos);
     let corr = vt::snap(app, ui.ctx(), ectx, map, &[], &[c0], mods);
     let c = [c0[0] + corr[0], c0[1] + corr[1]];
@@ -2003,7 +2055,7 @@ fn pen_press(
         if n >= 2 && first.is_some_and(|f| f.distance(pos) < 8.0) {
             let _ = app.session.execute("mask.setClosed", json!({"layer": lid.0, "mask": uid, "closed": true}));
             ui.data_mut(|d| {
-                d.remove::<(LayerId, u64)>(pen_id());
+                d.remove::<(LayerId, u64)>(pen_id(ectx.comp_id));
                 d.remove::<Gesture>(gid);
             });
             return;
@@ -2016,28 +2068,26 @@ fn pen_press(
         }
         return;
     }
-    // On a visible path's segment the Pen adds a vertex there; on a motion path, a keyframe.
+    // Segment insertion is handled by the caller; motion paths add a keyframe.
     if let Some(f) = motion_frame {
         add_motion_key(app, f);
         return;
     }
-    if let Some((l, m, seg, t)) = ov::segment_at(paths, map, pos, 5.0) {
-        let _ = app.session.execute("mask.insertVertex", json!({"layer": l.0, "mask": m, "segment": seg, "t": t}));
-        return;
-    }
-    let target = app
-        .session
-        .state
-        .selected_layers
-        .iter()
-        .copied()
-        .find(|id| ectx.comp.layer(*id).is_some_and(|l| !l.switches.locked && (l.masks().is_some() || matches!(l.source, LayerSource::Shape))));
+    let target = app.session.state.selected_layers.iter().copied().find(|id| {
+        ectx.comp.layer(*id).is_some_and(|l| !l.switches.locked && l.is_active_at(ectx.time) && (l.masks().is_some() || matches!(l.source, LayerSource::Shape)))
+    });
     let layer = target.and_then(|id| ectx.comp.layer(id));
     let (lid, uid, inv) = match layer {
         Some(l) if !matches!(l.source, LayerSource::Shape) || app.session.state.shape_tool.creates_mask => {
             let Some(inv) = l2c(ectx, l).0.inverse() else { return };
             let lp = inv.apply(gv2(c[0], c[1]));
-            let Ok(v) = app.session.execute("mask.new", json!({"layer": l.id.0, "vertices": [[lp.x, lp.y]]})) else { return };
+            let v = match app.session.execute("mask.new", json!({"layer": l.id.0, "vertices": [[lp.x, lp.y]]})) {
+                Ok(v) => v,
+                Err(e) => {
+                    app.ui.status = e.to_string();
+                    return;
+                }
+            };
             let Some(mask) = v["mask"].as_u64() else { return };
             (l.id, mask, inv)
         }
@@ -2059,7 +2109,7 @@ fn pen_press(
     };
     let lp = inv.apply(gv2(c[0], c[1]));
     ui.data_mut(|d| {
-        d.insert_temp(pen_id(), (lid, uid));
+        d.insert_temp(pen_id(ectx.comp_id), (lid, uid));
         d.insert_temp(gid, Gesture::Pen { layer: lid, mask: uid, index: 0, vertex: [lp.x, lp.y], inv, press: pos });
     });
 }

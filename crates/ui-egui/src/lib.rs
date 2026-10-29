@@ -1578,7 +1578,13 @@ impl EffectcraftApp {
                         self.ui.status = e;
                     }
                 }
-                effectcraft_engine::Event::PurgeCaches => self.frames.clear(),
+                effectcraft_engine::Event::PurgeCaches => {
+                    self.frames.clear();
+                    self.viewer_shown = None;
+                    self.viewer_image = None;
+                    self.viewer_readback = Default::default();
+                    ctx.request_repaint();
+                }
             }
         }
     }

@@ -113,15 +113,9 @@ mod tests {
 
     #[test]
     fn effects_are_hidden_but_legacy_data_can_be_read() {
-        for id in [
-            "ec.perspective.cameratracker",
-            "ec.matte.rotobrush",
-            "ec.utility.facetrackpoints",
-            "ec.utility.facemeasurements",
-            "ec.vr.blur",
-            "ec.vr.converter",
-            "ec.distort.warpstabilizer",
-        ] {
+        for id in
+            ["ec.perspective.cameratracker", "ec.matte.rotobrush", "ec.utility.facetrackpoints", "ec.utility.facemeasurements", "ec.distort.warpstabilizer"]
+        {
             assert!(effectcraft_effects::all().iter().all(|e| e.id != id));
             assert!(effectcraft_effects::find(id).is_some());
         }

@@ -366,6 +366,7 @@ pub fn comp_has_effects(project: &Project, comp: ItemId) -> bool {
 }
 
 pub struct Frames {
+    reload_epoch: std::sync::atomic::AtomicU64,
     cache: Arc<Mutex<Cache>>,
     /// Keys queued or rendering.
     inflight: Arc<Mutex<HashSet<FrameKey>>>,
@@ -397,6 +398,7 @@ impl Default for Frames {
         #[cfg(not(target_arch = "wasm32"))]
         let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(2, 16);
         Frames {
+            reload_epoch: std::sync::atomic::AtomicU64::new(0),
             cache: Arc::new(Mutex::new(Cache { map: HashMap::new(), order: VecDeque::new(), bytes: 0, gpu_bytes: 0, budget: 3 << 30, gpu_budget: GPU_BUDGET })),
             inflight: Arc::new(Mutex::new(HashSet::new())),
             queue: Arc::new(Mutex::new(Queue::default())),
@@ -604,6 +606,15 @@ impl Frames {
             }
             found
         });
+        // A file can change pixels without changing the project structure.
+        let epoch = self.reload_epoch.load(std::sync::atomic::Ordering::Relaxed);
+        let id = if epoch == 0 {
+            id
+        } else {
+            let mut hash = std::collections::hash_map::DefaultHasher::new();
+            std::hash::Hash::hash(&(id, epoch), &mut hash);
+            std::hash::Hasher::finish(&hash)
+        };
         if let Ok(mut guard) = self.keepers.lock() {
             let (clock, k) = &mut *guard;
             *clock += 1;
@@ -710,6 +721,8 @@ impl Frames {
     }
 
     pub fn clear(&self) {
+        // Old render completions must never match frames requested after a purge.
+        self.reload_epoch.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if let Some(r) = &self.remote {
             r.purge();
         }

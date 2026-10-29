@@ -517,7 +517,6 @@ pub fn legacy_only(id: &str) -> bool {
     }
     toon_catalogue_legacy_only(id)
         || id == "ec.distort.warpstabilizer"
-        || id.starts_with("ec.vr.")
         || matches!(id, camera_tracker::ID | face_track::POINTS_ID | face_track::MEASUREMENTS_ID | roto::ID)
 }
 

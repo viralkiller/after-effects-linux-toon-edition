@@ -1912,3 +1912,151 @@ fn vertex_tools_edit_motion_path_keyframes() {
     click(&mut h, quarter);
     assert_eq!(keys(&h).len(), 3);
 }
+
+#[test]
+fn toon_mask_nested_comp_pen_is_visible_with_passive_overlays_hidden() {
+    let mut h = harness();
+    let plate = h.state().session.active_comp().unwrap().layers.iter().find(|l| l.name == "Plate").unwrap().id;
+    let result = h.state_mut().session.execute("layer.precompose", json!({"layers": [plate.0], "name": "Master 1"})).unwrap();
+    let nested = LayerId(result["layer"].as_u64().unwrap());
+    h.state_mut().ui.viewer.show_masks = false;
+    h.state_mut().ui.viewer.show_layer_controls = false;
+    h.state_mut().ui.tool = Tool::Pen;
+    h.run_steps(3);
+    for point in [[100.0, 80.0], [240.0, 80.0], [240.0, 240.0]] {
+        let at = screen(&h, point);
+        click(&mut h, at);
+    }
+    let mask = h.state().session.active_comp().unwrap().layer(nested).unwrap().masks().unwrap().groups().next().unwrap();
+    let uid = mask.uid;
+    assert_eq!(mask.get("path").unwrap().value.as_path().unwrap().vertices.len(), 3);
+    assert!(h.state().auto.find(&format!("viewer.mask.{uid}.vertex.0")).is_some());
+    let at = screen(&h, [100.0, 80.0]);
+    click(&mut h, at);
+    let mask = h.state().session.active_comp().unwrap().layer(nested).unwrap().masks().unwrap().groups().next().unwrap();
+    assert!(mask.get("path").unwrap().value.as_path().unwrap().closed);
+}
+
+#[test]
+fn toon_mask_pen_stops_editing_the_previous_selected_layer() {
+    let mut h = harness();
+    let layers = h.state().session.active_comp().unwrap().layers.clone();
+    let plate = layers.iter().find(|l| l.name == "Plate").unwrap().id;
+    let box_id = layers.iter().find(|l| l.name == "Box").unwrap().id;
+    h.state_mut().session.execute("layer.select", json!({"layers": [plate.0]})).unwrap();
+    h.state_mut().ui.tool = Tool::Pen;
+    h.run_steps(3);
+    let at = screen(&h, [100.0, 80.0]);
+    click(&mut h, at);
+    h.state_mut().session.execute("layer.select", json!({"layers": [box_id.0]})).unwrap();
+    h.run_steps(3);
+    let at = screen(&h, [340.0, 200.0]);
+    click(&mut h, at);
+    let comp = h.state().session.active_comp().unwrap();
+    for id in [plate, box_id] {
+        let mask = comp.layer(id).unwrap().masks().unwrap().groups().next().unwrap();
+        assert_eq!(mask.get("path").unwrap().value.as_path().unwrap().vertices.len(), 1);
+    }
+}
+
+#[test]
+fn toon_mask_rectangle_vertices_take_priority_over_new_paths() {
+    for tool in [Tool::Pen, Tool::Rectangle] {
+        let mut h = harness();
+        let plate = h.state().session.active_comp().unwrap().layers.iter().find(|l| l.name == "Plate").unwrap().id;
+        let result = h.state_mut().session.execute("layer.precompose", json!({"layers": [plate.0], "name": "Master 1"})).unwrap();
+        let layer = LayerId(result["layer"].as_u64().unwrap());
+        let result = h.state_mut().session.execute("layer.addMask", json!({"layer": layer.0, "shape": "rect", "rect": [100, 80, 140, 160]})).unwrap();
+        let uid = result["mask"].as_u64().unwrap();
+        let before =
+            h.state().session.active_comp().unwrap().layer(layer).unwrap().props.find_group(uid).unwrap().get("path").unwrap().value.as_path().unwrap().clone();
+        h.state_mut().ui.tool = tool;
+        h.run_steps(3);
+        let from = rect(&h, &format!("viewer.mask.{uid}.vertex.0")).center();
+        let to = from + vec2(30.0, 20.0);
+        drag(&mut h, from, to);
+        let comp = h.state().session.active_comp().unwrap();
+        let masks = comp.layer(layer).unwrap().masks().unwrap();
+        assert_eq!(masks.groups().count(), 1, "dragging a vertex must not create a mask: {tool:?}");
+        let after = masks.groups().next().unwrap().get("path").unwrap().value.as_path().unwrap();
+        assert_eq!(after.vertices.len(), 4);
+        assert!(after.closed);
+        assert_ne!(after.vertices[0], before.vertices[0], "the grabbed vertex must move: {tool:?}");
+        assert_eq!(&after.vertices[1..], &before.vertices[1..]);
+        assert_eq!(comp.layers.len(), 2, "no extra shape layer");
+    }
+}
+
+#[test]
+fn toon_mask_pen_moves_an_open_paths_existing_vertex_without_extending_it() {
+    let mut h = harness();
+    let plate = h.state().session.active_comp().unwrap().layers.iter().find(|l| l.name == "Plate").unwrap().id;
+    h.state_mut().session.execute("layer.select", json!({"layers": [plate.0]})).unwrap();
+    h.state_mut().ui.tool = Tool::Pen;
+    h.run_steps(3);
+    for p in [[100.0, 80.0], [240.0, 80.0], [240.0, 240.0]] {
+        let at = screen(&h, p);
+        click(&mut h, at);
+    }
+    let mask = h.state().session.active_comp().unwrap().layer(plate).unwrap().masks().unwrap().groups().next().unwrap();
+    let uid = mask.uid;
+    let before = mask.get("path").unwrap().value.as_path().unwrap().clone();
+    let from = rect(&h, &format!("viewer.mask.{uid}.vertex.1")).center();
+    drag(&mut h, from, from + vec2(30.0, 20.0));
+    let masks = h.state().session.active_comp().unwrap().layer(plate).unwrap().masks().unwrap();
+    assert_eq!(masks.groups().count(), 1);
+    let after = masks.groups().next().unwrap().get("path").unwrap().value.as_path().unwrap();
+    assert_eq!(after.vertices.len(), 3);
+    assert!(!after.closed);
+    assert_ne!(after.vertices[1], before.vertices[1]);
+    assert_eq!(after.vertices[0], before.vertices[0]);
+    assert_eq!(after.vertices[2], before.vertices[2]);
+}
+
+#[test]
+fn toon_mask_pen_inserts_only_with_ctrl_on_a_segment() {
+    let mut h = harness();
+    let plate = h.state().session.active_comp().unwrap().layers.iter().find(|l| l.name == "Plate").unwrap().id;
+    h.state_mut().session.execute("layer.select", json!({"layers": [plate.0]})).unwrap();
+    let result = h.state_mut().session.execute("layer.addMask", json!({"layer": plate.0, "shape": "rect", "rect": [100, 80, 140, 160]})).unwrap();
+    let uid = result["mask"].as_u64().unwrap();
+    h.state_mut().ui.tool = Tool::Pen;
+    h.run_steps(3);
+    let a = rect(&h, &format!("viewer.mask.{uid}.vertex.0")).center();
+    let b = rect(&h, &format!("viewer.mask.{uid}.vertex.1")).center();
+    let midpoint = a + (b - a) * 0.5;
+    click(&mut h, midpoint);
+    let count = |h: &Harness<'_, EffectcraftApp>| {
+        h.state()
+            .session
+            .active_comp()
+            .unwrap()
+            .layer(plate)
+            .unwrap()
+            .props
+            .find_group(uid)
+            .unwrap()
+            .get("path")
+            .unwrap()
+            .value
+            .as_path()
+            .unwrap()
+            .vertices
+            .len()
+    };
+    assert_eq!(count(&h), 4, "plain segment click must not insert");
+    let ctrl = egui::Modifiers { ctrl: true, command: true, ..Default::default() };
+    // Ctrl-click an existing vertex must not duplicate it.
+    for (at, expected) in [(a, 4), (midpoint, 5)] {
+        h.run_steps(40);
+        h.input_mut().events.push(Event::ModifiersChanged(ctrl));
+        h.input_mut().events.push(Event::PointerMoved(at));
+        h.step();
+        h.input_mut().events.push(Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: ctrl });
+        h.step();
+        h.input_mut().events.push(Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: ctrl });
+        h.run_steps(2);
+        assert_eq!(count(&h), expected);
+    }
+    assert_eq!(h.state().session.active_comp().unwrap().layer(plate).unwrap().masks().unwrap().groups().count(), 1);
+}

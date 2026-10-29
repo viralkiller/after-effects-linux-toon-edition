@@ -141,7 +141,75 @@ fn refreshed(s: &Session, f: &Footage, probed: Footage) -> Footage {
 /// Reload footage items `ids` from their files (File ▸ Reload Footage): an undo step; items
 /// whose file can't be read are marked missing. Returns how many items were reloaded.
 pub fn reload_items(s: &mut Session, ids: &[ItemId]) -> crate::Result<usize> {
-    Ok(reload(s, ids, true)?.0)
+    let ids = layered_reload_items(s, ids);
+    Ok(reload(s, &ids, true)?.0)
+}
+
+/// Expand a layered source to all its imported items, including merged footage.
+/// Match complete stored paths: identically named files in other folders stay separate.
+/// Existing timeline layers and animation are not rebuilt.
+fn layered_reload_items(s: &Session, ids: &[ItemId]) -> Vec<ItemId> {
+    let paths: BTreeSet<&str> = ids
+        .iter()
+        .filter_map(|id| {
+            let ItemKind::Footage(f) = &s.project.item(*id)?.kind else { return None };
+            let ext = std::path::Path::new(&f.path).extension().and_then(|v| v.to_str()).unwrap_or("");
+            let layered =
+                ["psd", "psb", "xcf"].iter().any(|v| ext.eq_ignore_ascii_case(v)) || ["PSD", "PSB", "XCF"].iter().any(|v| f.codec.eq_ignore_ascii_case(v));
+            (layered && !f.path.is_empty()).then_some(f.path.as_str())
+        })
+        .collect();
+    let mut expanded: BTreeSet<ItemId> = ids.iter().copied().collect();
+    for item in s.project.items.values() {
+        if let ItemKind::Footage(f) = &item.kind
+            && paths.contains(f.path.as_str())
+        {
+            expanded.insert(item.id);
+        }
+    }
+    expanded.into_iter().collect()
+}
+
+#[cfg(test)]
+mod layered_reload_tests {
+    use super::*;
+    use effectcraft_color::Label;
+
+    fn add(s: &mut Session, path: &str, codec: &str, layer: Option<SourceLayer>) -> ItemId {
+        Arc::make_mut(&mut s.project).add_item(
+            "source",
+            Label::Lavender,
+            None,
+            ItemKind::Footage(Footage { path: path.into(), codec: codec.into(), kind: FootageKind::Still, layer, ..Default::default() }),
+        )
+    }
+
+    #[test]
+    fn selecting_one_layer_reloads_all_imported_items_of_its_document() {
+        for (ext, codec) in [("psd", "PSD"), ("PSB", "PSB"), ("xcf", "XCF")] {
+            let mut s = Session::default();
+            let path = format!("/shots/character.{ext}");
+            let first = add(&mut s, &path, codec, Some(SourceLayer { index: 0, name: "front".into(), ..Default::default() }));
+            let second = add(&mut s, &path, codec, Some(SourceLayer { index: 1, name: "back".into(), ..Default::default() }));
+            let merged = add(&mut s, &path, codec, None);
+            let other = add(&mut s, &format!("/other/character.{ext}"), codec, None);
+            let before = s.project.to_json();
+            let ids = layered_reload_items(&s, &[first, first]);
+            assert_eq!(ids, vec![first, second, merged]);
+            assert!(!ids.contains(&other));
+            assert_eq!(layered_reload_items(&s, &[merged]), ids);
+            assert_eq!(s.project.to_json(), before);
+        }
+    }
+
+    #[test]
+    fn ordinary_footage_and_empty_selections_are_not_expanded() {
+        let mut s = Session::default();
+        let first = add(&mut s, "/shots/plain.png", "PNG", None);
+        add(&mut s, "/shots/plain.png", "PNG", None);
+        assert_eq!(layered_reload_items(&s, &[first]), vec![first]);
+        assert!(layered_reload_items(&s, &[]).is_empty());
+    }
 }
 
 /// Reload items `ids`. `undoable` makes it an edit; otherwise it records the disk without
@@ -207,10 +275,17 @@ fn reload(s: &mut Session, ids: &[ItemId], undoable: bool) -> crate::Result<(usi
 
 /// Make the media layer and the layer cache let go of `paths`, so renders read them again.
 fn forget(s: &mut Session, paths: &BTreeSet<String>) {
+    if paths.is_empty() {
+        return;
+    }
     for p in paths {
         s.footage.forget(p);
     }
     s.layer_cache.clear();
+    // Pixel-only changes leave project metadata identical. Advance the render
+    // revision so displayed frames and pending old-revision results are stale.
+    // Session::bump preserves the saved state when the project is unchanged.
+    s.bump();
     s.events.push(crate::Event::PurgeCaches);
 }
 
@@ -296,4 +371,36 @@ pub fn poll_scan(s: &mut Session) -> Option<crate::Result<Value>> {
     let stamps = s.footage_scan.as_ref()?.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take()?;
     s.footage_scan = None;
     Some(apply_stamps(s, stamps))
+}
+
+#[cfg(test)]
+mod reload_revision_tests {
+    use super::*;
+
+    #[test]
+    fn pixel_only_reload_advances_revision_without_modifying_saved_project() {
+        let mut s = Session::default();
+        s.mark_saved();
+        let revision = s.revision;
+        let project = s.project.to_json();
+        let paths = BTreeSet::from(["reload-test.psd".to_string()]);
+
+        forget(&mut s, &paths);
+
+        assert!(s.revision > revision);
+        assert_eq!(s.project.to_json(), project);
+        assert!(!s.is_dirty());
+        assert!(s.events.iter().any(|e| matches!(
+            e, crate::Event::ProjectChanged { revision: r } if *r == s.revision
+        )));
+        assert!(s.events.iter().any(|e| matches!(e, crate::Event::PurgeCaches)));
+    }
+
+    #[test]
+    fn empty_reload_does_not_advance_revision() {
+        let mut s = Session::default();
+        let revision = s.revision;
+        forget(&mut s, &BTreeSet::new());
+        assert_eq!(s.revision, revision);
+    }
 }
