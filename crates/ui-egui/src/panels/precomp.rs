@@ -83,10 +83,12 @@ pub fn open(app: &mut EffectcraftApp, p: &serde_json::Value) -> Result<(), Strin
     let first = c.layer(effectcraft_engine::project::LayerId(layers[0]));
     let can_leave = layers.len() == 1 && first.is_some_and(|l| l.source.item().is_some());
     let n = s.project.comps().count() + 1;
-    let base = if layers.len() == 1 { first.map(|l| format!("{} Comp 1", l.name)) } else { None };
+    let base = if layers.len() == 1 { first.map(|l| l.name.clone()) } else { None };
+    let base = base.unwrap_or_else(|| format!("Pre-comp {n}"));
+    let suggested = effectcraft_engine::project::unique_name(&base, s.project.items.values().map(|i| i.name.as_str()).chain(c.layers.iter().map(|l| l.name.as_str())));
     app.dialog_state.precompose = PrecomposeDraft {
         layers,
-        name: base.unwrap_or_else(|| format!("Pre-comp {n}")),
+        name: suggested,
         leave: false,
         can_leave,
         layer_name: first.map(|l| l.name.clone()).unwrap_or_default(),

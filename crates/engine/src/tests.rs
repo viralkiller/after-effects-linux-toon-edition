@@ -568,3 +568,62 @@ fn new_text_rejects_malformed_positions_without_creating_a_layer() {
     s.execute("layer.newText", json!({"text": "No explicit position"})).unwrap();
     assert_eq!(s.active_comp().unwrap().layers.len(), 2);
 }
+
+fn toon_timeline_session() -> Session {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Main", "width": 1280, "height": 720, "frameRate": 30, "duration": 10})).unwrap();
+    s
+}
+
+#[test]
+fn toon_timeline_split_places_later_part_above_and_undo_restores() {
+    let mut s = toon_timeline_session();
+    assert!(s.prefs.general.create_split_layers_above);
+    let id = s.execute("layer.newSolid", json!({"name": "master1"})).unwrap()["layer"].as_u64().unwrap();
+    s.execute("time.set", json!({"time": 4})).unwrap();
+    s.execute("edit.splitLayer", json!({"layers": [id]})).unwrap();
+    let c = s.active_comp().unwrap();
+    assert_eq!(c.layers[0].in_point.seconds(), 4.0);
+    assert_eq!(c.layers[1].id.0, id);
+    assert_eq!(c.layers[1].out_point.seconds(), 4.0);
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(s.active_comp().unwrap().layers.len(), 1);
+}
+
+#[test]
+fn toon_timeline_duplicate_and_precompose_names_increment() {
+    let mut s = toon_timeline_session();
+    let id = s.execute("layer.newSolid", json!({"name": "master1"})).unwrap()["layer"].as_u64().unwrap();
+    s.execute("edit.duplicate", json!({"layers": [id]})).unwrap();
+    assert!(s.active_comp().unwrap().layers.iter().any(|l| l.name == "master2"));
+    let result = s.execute("layer.precompose", json!({"layers": [id]})).unwrap();
+    let cid = crate::project::ItemId(result["comp"].as_u64().unwrap());
+    assert_eq!(s.project.item(cid).unwrap().name, "master3");
+    let result = s.execute("project.duplicate", json!({"items": [cid.0]})).unwrap();
+    let copy = crate::project::ItemId(result["items"][0].as_u64().unwrap());
+    assert_eq!(s.project.item(copy).unwrap().name, "master4");
+}
+
+#[test]
+fn toon_timeline_group_trim_preserves_offsets_clamps_and_skips_locked() {
+    let mut s = toon_timeline_session();
+    let a = s.execute("layer.newSolid", json!({"name": "A"})).unwrap()["layer"].as_u64().unwrap();
+    let b = s.execute("layer.newSolid", json!({"name": "B"})).unwrap()["layer"].as_u64().unwrap();
+    s.execute("layer.timing", json!({"layers": [a], "in": 1, "out": 5})).unwrap();
+    s.execute("layer.timing", json!({"layers": [b], "in": 2, "out": 8})).unwrap();
+    s.execute("layer.timing", json!({"layers": [a, b], "op": "trimOutBy", "delta": 4})).unwrap();
+    let ends = |s: &Session| {
+        let c = s.active_comp().unwrap();
+        (c.layer(crate::project::LayerId(a)).unwrap().out_point.seconds(), c.layer(crate::project::LayerId(b)).unwrap().out_point.seconds())
+    };
+    assert_eq!(ends(&s), (7.0, 10.0));
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(ends(&s), (5.0, 8.0));
+    s.execute("layer.timing", json!({"layers": [a, b], "op": "trimInBy", "delta": -3})).unwrap();
+    let c = s.active_comp().unwrap();
+    assert_eq!(c.layer(crate::project::LayerId(a)).unwrap().in_point.seconds(), 0.0);
+    assert_eq!(c.layer(crate::project::LayerId(b)).unwrap().in_point.seconds(), 1.0);
+    s.execute("layer.setSwitch", json!({"layers": [b], "switch": "locked", "value": true})).unwrap();
+    s.execute("layer.timing", json!({"layers": [a, b], "op": "trimOutBy", "delta": 1})).unwrap();
+    assert_eq!(ends(&s), (6.0, 8.0));
+}

@@ -77,7 +77,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("timeline.reveal.maskOpacity", "Reveal Mask Opacity", [], None),
     uic!("timeline.reveal.maskPath", "Reveal Mask Path", [], None),
     uic!("timeline.reveal.material", "Reveal Material Options", [], None),
-    uic!("timeline.reveal.paint", "Reveal Paint, Roto Brush and Puppet", [], None),
+    uic!("timeline.reveal.paint", "Reveal Puppet", [], None),
     uic!("timeline.reveal.selected", "Reveal Selected Properties", [], None),
     uic!("timeline.reveal.missingEffects", "Reveal Missing Effects", [], None),
     uic!("timeline.reveal.waveform", "Reveal Audio Waveform", [], None),
@@ -114,8 +114,6 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("tool.shape", "Shape Tools", [], Some("Q")),
     uic!("tool.pen", "Pen Tool", [], Some("G")),
     uic!("tool.type", "Type Tools", [], Some("Cmd+T")),
-    uic!("tool.brush", "Brush Tools", [], Some("Cmd+B")),
-    uic!("tool.rotoBrush", "Roto Brush & Refine Edge Tools", [], Some("Alt+W")),
     uic!("tool.puppet", "Puppet Tools", [], Some("Cmd+P")),
     uic!("app.newComp", "New Composition...", [], None),
     uic!("app.compSettings", "Composition Settings...", [], None),
@@ -353,29 +351,21 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
     }
     if let Some(t) = id.strip_prefix("tool.") {
         // Slot shortcuts cycle through the slot's tools.
-        let slot = match t {
-            "shape" => Some(8),
-            "pen" => Some(9),
-            "type" => Some(10),
-            "brush" => Some(11),
-            "rotoBrush" => Some(14),
-            "puppet" => Some(15),
+        let representative = match t {
+            "shape" => Some(Tool::Rectangle),
+            "pen" => Some(Tool::Pen),
+            "type" => Some(Tool::Type),
+            "puppet" => Some(Tool::Puppet),
             _ => None,
         };
-        if let Some(si) = slot {
-            let tools: Vec<Tool> = match si {
-                11 => vec![Tool::Brush, Tool::Clone, Tool::Eraser],
-                _ => crate::state::Tool::SLOTS[si].to_vec(),
-            };
-            let cur = tools.iter().position(|x| *x == app.ui.tool);
-            let next = match cur {
-                Some(i) => tools[(i + 1) % tools.len()],
-                None => app.ui.slot_tools.get(si).copied().filter(|x| tools.contains(x)).unwrap_or(tools[0]),
-            };
+        if let Some(si) = representative.and_then(|tool| Tool::SLOTS.iter().position(|slot| slot.contains(&tool))) {
+            let tools = Tool::SLOTS.get(si).copied().unwrap_or(&[]);
+            let next = match tools.iter().position(|x| *x == app.ui.tool) {
+                Some(i) => tools.get((i + 1) % tools.len()).copied(),
+                None => app.ui.slot_tools.get(si).copied().filter(|x| tools.contains(x)).or_else(|| tools.first().copied()),
+            }.ok_or_else(|| "empty tool slot".to_string())?;
             app.ui.tool = next;
-            if si < app.ui.slot_tools.len() && si != 11 {
-                app.ui.slot_tools[si] = next;
-            }
+            if let Some(saved) = app.ui.slot_tools.get_mut(si) { *saved = next; }
             return Ok(json!({"tool": next}));
         }
         let tool = Tool::from_name(t).ok_or_else(|| format!("unknown tool `{t}`"))?;
@@ -712,7 +702,10 @@ fn clipboard_note(s: &effectcraft_engine::Session) -> String {
 }
 
 pub(crate) fn run_engine(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: Value) -> Result<Value, String> {
-    let r = app.session.execute(id, params).map_err(|e| e.to_string());
+    if matches!(id, "file.save" | "file.saveAs" | "file.saveCopy" | "file.saveCopyAsXml") {
+        app.capture_document_view()?;
+    }
+    let mut r = app.session.execute(id, params).map_err(|e| e.to_string());
     if let Err(e) = &r {
         app.ui.status = e.clone();
     } else if COPY_COMMANDS.contains(&id) && app.session.state.text_edit.is_none() {
@@ -723,7 +716,8 @@ pub(crate) fn run_engine(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str
         match ev {
             effectcraft_engine::Event::Frontend { command, params } => {
                 if let Err(e) = frontend(app, ctx, &command, params) {
-                    app.ui.status = e;
+                    app.ui.status = e.clone();
+                    r = Err(e);
                 }
             }
             other => app.session.events.push(other),

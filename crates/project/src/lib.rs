@@ -330,9 +330,9 @@ pub struct Comp {
     /// Comp switches (timeline toolbar).
     #[serde(default)]
     pub hide_shy: bool,
-    #[serde(default = "yes")]
+    #[serde(default)]
     pub enable_motion_blur: bool,
-    #[serde(default = "yes")]
+    #[serde(default)]
     pub enable_frame_blending: bool,
     #[serde(default)]
     pub draft_3d: bool,
@@ -391,8 +391,8 @@ impl Comp {
             motion_blur_adaptive_limit: 128,
             renderer: Renderer::Classic3D,
             hide_shy: false,
-            enable_motion_blur: true,
-            enable_frame_blending: true,
+            enable_motion_blur: false,
+            enable_frame_blending: false,
             draft_3d: false,
             preserve_frame_rate: false,
             preserve_resolution: false,
@@ -451,11 +451,7 @@ impl Comp {
     }
     /// Unique layer name with a numeric suffix (`Shape Layer 2`).
     pub fn unique_layer_name(&self, base: &str) -> String {
-        if !self.layers.iter().any(|l| l.name == base) {
-            return base.to_string();
-        }
-        let stem = base.trim_end_matches(|c: char| c.is_ascii_digit()).trim_end();
-        (2..).map(|i| format!("{stem} {i}")).find(|n| !self.layers.iter().any(|l| &l.name == n)).unwrap_or_default()
+        unique_name(base, self.layers.iter().map(|l| l.name.as_str()))
     }
 }
 
@@ -1188,8 +1184,21 @@ impl Item {
     }
 }
 
+/// Saved editing context; it does not affect rendered content or undo history.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EditingSession {
+    pub open_comps: Vec<ItemId>,
+    pub active_comp: Option<ItemId>,
+    pub times: BTreeMap<ItemId, Tick>,
+    /// Versioned frontend-owned layout. Headless clients preserve it without interpreting it.
+    pub frontend: serde_json::Value,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Project {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editing_session: Option<EditingSession>,
     /// Preview panel shortcuts, saved per project. Older projects start at Half.
     #[serde(default)]
     pub preview: preview::PreviewSettings,
@@ -1214,6 +1223,7 @@ pub struct Project {
 impl Default for Project {
     fn default() -> Self {
         Project {
+            editing_session: None,
             preview: preview::PreviewSettings::default(),
             viewport_resolution: preview::ViewportResolution::default(),
             schema: SCHEMA_VERSION,
@@ -1314,7 +1324,9 @@ impl Project {
             };
             kind && a.id == b.id && a.name == b.name && a.label == b.label && a.comment == b.comment && a.parent == b.parent && a.proxy == b.proxy
         };
-        self.schema == other.schema
+        self.preview == other.preview
+            && self.viewport_resolution == other.viewport_resolution
+            && self.schema == other.schema
             && self.next_id == other.next_id
             && self.settings == other.settings
             && self.items.len() == other.items.len()
@@ -1359,3 +1371,34 @@ impl Project {
 
 #[cfg(test)]
 mod tests;
+
+/// Preserve an available name; on collision increment its trailing decimal suffix.
+/// Decimal strings avoid overflow even for names ending in very long numbers.
+pub fn unique_name<'a>(base: &str, names: impl IntoIterator<Item = &'a str>) -> String {
+    let used: std::collections::BTreeSet<&str> = names.into_iter().collect();
+    if !used.contains(base) {
+        return base.to_owned();
+    }
+    let stem = base.trim_end_matches(|c: char| c.is_ascii_digit());
+    let suffix = base.get(stem.len()..).unwrap_or_default();
+    let mut digits = if suffix.is_empty() { vec![b'1'] } else { suffix.as_bytes().to_vec() };
+    loop {
+        let mut carry = true;
+        for digit in digits.iter_mut().rev() {
+            if *digit == b'9' {
+                *digit = b'0';
+            } else {
+                *digit += 1;
+                carry = false;
+                break;
+            }
+        }
+        if carry {
+            digits.insert(0, b'1');
+        }
+        let candidate = format!("{stem}{}", digits.iter().copied().map(char::from).collect::<String>());
+        if !used.contains(candidate.as_str()) {
+            return candidate;
+        }
+    }
+}

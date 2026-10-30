@@ -1366,6 +1366,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     // visible span (pulled in: zoomed in; stretched to the whole track: the whole comp).
     let nresp = ui.interact(nav, egui::Id::new("tl-nav"), Sense::drag());
     app.auto.add("timeline.navigator", nav, "Time navigator");
+    if nresp.hovered() || nresp.dragged() {
+        ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+    }
     if nresp.dragged() {
         let d = nresp.drag_delta().x as f64 / nav.width() as f64 * comp.duration.seconds();
         app.ui.timeline.start = (app.ui.timeline.start + d).clamp(0.0, comp.duration.seconds());
@@ -1403,6 +1406,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let bar = wa.intersect(wa_row);
     let bresp = ui.interact(bar, egui::Id::new("wa-bar"), Sense::click_and_drag());
     app.auto.add("timeline.workArea.bar", bar, "Work area");
+    if bresp.hovered() || bresp.dragged() {
+        ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+    }
     // Right-click: the work area's commands (After Effects).
     bresp.context_menu(|ui| {
         let mut chosen = None;
@@ -1436,6 +1442,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         p.rect_filled(handle, 2.0, t.accent);
         let resp = ui.interact(hr, egui::Id::new(("wa", set)), Sense::drag());
         app.auto.add(&format!("timeline.workArea.{set}"), hr, set);
+        if resp.hovered() || resp.dragged() {
+            ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+        }
         if resp.dragged()
             && let Some(pt) = resp.interact_pointer_pos()
         {
@@ -2117,10 +2126,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                                     "move" => {
                                         json!({"layers": if is_sel { json!(selected.iter().map(|l| l.0).collect::<Vec<_>>()) } else { json!([layer.id.0]) }, "delta": d, "merge": drag_key})
                                     }
-                                    "in" => json!({"layers": [layer.id.0], "in": (layer.in_point.seconds() + d).max(0.0), "merge": drag_key}),
-                                    _ => {
-                                        json!({"layers": [layer.id.0], "out": (layer.out_point.seconds() + d).min(comp.duration.seconds()), "merge": drag_key})
-                                    }
+                                    _ => json!({
+                                        "layers": if is_sel { selected.iter().map(|l| l.0).collect::<Vec<_>>() } else { vec![layer.id.0] },
+                                        "op": if kind == "in" { "trimInBy" } else { "trimOutBy" },
+                                        "delta": d, "merge": drag_key
+                                    }),
                                 };
                                 actions.push(("layer.timing".into(), params));
                             }

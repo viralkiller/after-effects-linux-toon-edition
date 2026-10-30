@@ -121,3 +121,36 @@ fn project_files_name_their_version_and_always_read_back() {
     assert!(crate::is_newer_version("0.2.0", "0.1.9") && crate::is_newer_version("1.0.0-rc.1", "0.9.9"));
     assert!(!crate::is_newer_version("0.1.1", "0.1.1") && !crate::is_newer_version("0.1.0", "0.1.1"));
 }
+
+#[test]
+fn toon_timeline_names_increment_without_collisions_or_overflow() {
+    for (base, names, expected) in [
+        ("master1", vec!["master1", "master2"], "master3"),
+        ("master", vec!["master"], "master2"),
+        ("Master 9", vec!["Master 9"], "Master 10"),
+        ("master009", vec!["master009"], "master010"),
+        ("足1", vec!["足1"], "足2"),
+        ("master999999999999999999999999", vec!["master999999999999999999999999"], "master1000000000000000000000000"),
+        ("free", vec!["other"], "free"),
+    ] {
+        assert_eq!(crate::unique_name(base, names), expected);
+    }
+}
+
+#[test]
+fn toon_timeline_blur_defaults_are_off_and_saved_choices_survive() {
+    let c = Comp::new(1280, 720, FrameRate::FPS_29_97, Tick::from_seconds_f64(10.0));
+    assert!(!c.enable_motion_blur && !c.enable_frame_blending);
+    let mut value = serde_json::to_value(&c).unwrap();
+    // Use roundtrip serialization to check explicitly enabled values remain enabled.
+    let mut enabled = c.clone();
+    enabled.enable_motion_blur = true;
+    enabled.enable_frame_blending = true;
+    let restored: Comp = serde_json::from_value(serde_json::to_value(&enabled).unwrap()).unwrap();
+    assert!(restored.enable_motion_blur && restored.enable_frame_blending);
+    // Test absent fields using the actual serde field names from the two serializations.
+    let on = serde_json::to_value(&enabled).unwrap();
+    value.as_object_mut().unwrap().retain(|key, v| on.get(key) == Some(v));
+    let legacy: Comp = serde_json::from_value(value).unwrap();
+    assert!(!legacy.enable_motion_blur && !legacy.enable_frame_blending);
+}

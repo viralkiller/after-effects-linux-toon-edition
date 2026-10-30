@@ -565,7 +565,7 @@ fn toon_catalogue_legacy_only(id: &str) -> bool {
 
 pub fn all() -> Vec<&'static EffectSpec> {
     let plugins = plugin::plugins();
-    let mut v: Vec<&'static EffectSpec> = registry().iter().filter(|e| !legacy_only(e.id)).collect();
+    let mut v: Vec<&'static EffectSpec> = registry().iter().filter(|e| !legacy_only(e.id) && e.id != paint::ID).collect();
     if !plugins.is_empty() {
         v.extend(plugins);
         v.sort_by(|a, b| a.category.cmp(b.category).then(a.name.cmp(b.name)));

@@ -915,13 +915,33 @@ fn timing(s: &mut Session, p: &Value) -> Result<Value> {
     s.edit("Layer Timing", merge_p(p), |proj, _| {
         let comp = proj.comp_mut(cid).ok_or(EngineError::NoComp)?;
         let fd = comp.frame_duration();
-        for l in comp.layers.iter_mut().filter(|l| ids.contains(&l.id)) {
+        // Clamp one shared edge delta so relative timing survives boundary hits.
+        let edge_delta = if op == "trimInBy" || op == "trimOutBy" {
+            let mut lo = None;
+            let mut hi = None;
+            for l in comp.layers.iter().filter(|l| ids.contains(&l.id) && !l.switches.locked) {
+                let (a, b) = if op == "trimInBy" {
+                    (Tick(0) - l.in_point, l.out_point - fd - l.in_point)
+                } else {
+                    (l.in_point + fd - l.out_point, comp.duration - l.out_point)
+                };
+                lo = Some(lo.map_or(a, |v: Tick| v.max(a)));
+                hi = Some(hi.map_or(b, |v: Tick| v.min(b)));
+            }
+            match (lo, hi) {
+                (Some(a), Some(b)) if a <= b => delta.unwrap_or(Tick(0)).max(a).min(b),
+                _ => Tick(0),
+            }
+        } else { Tick(0) };
+        for l in comp.layers.iter_mut().filter(|l| ids.contains(&l.id) && !l.switches.locked) {
             let shift = |l: &mut Layer, d: Tick| {
                 l.start_time += d;
                 l.in_point += d;
                 l.out_point += d;
             };
             match op.as_str() {
+                "trimInBy" => l.in_point += edge_delta,
+                "trimOutBy" => l.out_point += edge_delta,
                 "moveInToTime" => {
                     let d = t - l.in_point;
                     shift(l, d);
@@ -1080,8 +1100,11 @@ fn precompose(s: &mut Session, p: &Value) -> Result<Value> {
     if ids.is_empty() {
         return Err(bad(c, "no layers"));
     }
-    let name = str_p(p, "name").unwrap_or("Pre-comp 1").to_string();
     let comp = s.project.comp(cid).ok_or(EngineError::NoComp)?.clone();
+    let base = str_p(p, "name").unwrap_or_else(|| {
+        if ids.len() == 1 { ids.first().and_then(|id| comp.layer(*id)).map(|l| l.name.as_str()).unwrap_or("Pre-comp 1") } else { "Pre-comp 1" }
+    });
+    let name = effectcraft_project::unique_name(base, s.project.items.values().map(|i| i.name.as_str()).chain(comp.layers.iter().map(|l| l.name.as_str())));
     let leave = match str_p(p, "mode").unwrap_or("move") {
         "move" => false,
         "leave" => true,
@@ -1586,7 +1609,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Layer Timing",
             [],
             None,
-            "{layers?, op?: moveInToTime|moveOutToTime|trimInToTime|trimOutToTime, delta?, start?, in?, out?, merge?}",
+            "{layers?, op?: moveInToTime|moveOutToTime|trimInToTime|trimOutToTime|trimInBy|trimOutBy, delta?, start?, in?, out?, merge?}",
             has_layers,
             timing
         ),

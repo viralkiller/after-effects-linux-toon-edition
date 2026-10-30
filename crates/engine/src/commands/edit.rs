@@ -535,8 +535,9 @@ fn paste(s: &mut Session, p: &Value) -> Result<Value> {
 fn split(s: &mut Session, p: &Value) -> Result<Value> {
     let (cid, ids) = layers_p(s, p)?;
     let t = s.time();
-    // Settings ▸ General ▸ Create Split Layers Above Original Layer.
-    let above = s.prefs.general.create_split_layers_above;
+    // Toon timeline order: the later part is above, including with old saved preferences.
+    // Automation may explicitly request the reverse order.
+    let above = super::b_p(p, "above").unwrap_or(true);
     let new = s.edit("Split Layer", None, |proj, st| {
         let mut next = proj.next_id;
         let comp = proj.comp_mut(cid).ok_or(crate::EngineError::NoComp)?;
@@ -822,7 +823,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("edit.pasteReversedKeyframes", "Paste Reversed Keyframes", ["Edit"], None, "{layers?, prop?|path?, time?}", has_key_clip, paste_reversed),
         cmd!("edit.clear", "Clear", ["Edit"], Some("Delete"), "{layers?}", layers_or_keys, delete),
         cmd!("edit.duplicate", "Duplicate", ["Edit"], Some("Cmd+D"), "{layers?} (effects or shape items when they are selected)", has_layers, duplicate),
-        cmd!("edit.splitLayer", "Split Layer", ["Edit"], Some("Cmd+Shift+D"), "{layers?}", has_layers, split),
+        cmd!("edit.splitLayer", "Split Layer", ["Edit"], Some("Cmd+Shift+D"), "{layers?, above?: bool (default true)}", has_layers, split),
         cmd!("edit.liftWorkArea", "Lift Work Area", ["Edit"], None, "{layers?}", has_comp, lift),
         cmd!("edit.extractWorkArea", "Extract Work Area", ["Edit"], None, "{layers?}", has_comp, extract),
         cmd!("edit.selectAll", "Select All", ["Edit"], Some("Cmd+A"), "{}", has_comp, select_all),

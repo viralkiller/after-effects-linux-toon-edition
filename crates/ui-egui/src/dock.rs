@@ -56,7 +56,7 @@ pub enum PanelKind {
 }
 
 impl PanelKind {
-    pub const ALL: [PanelKind; 28] = [
+    pub const ALL: [PanelKind; 26] = [
         PanelKind::Project,
         PanelKind::EffectControls,
         PanelKind::Composition,
@@ -73,8 +73,6 @@ impl PanelKind {
         PanelKind::Wiggler,
         PanelKind::Smoother,
         PanelKind::MotionSketch,
-        PanelKind::Paint,
-        PanelKind::Brushes,
         PanelKind::RenderQueue,
         PanelKind::Flowchart,
         PanelKind::History,
@@ -87,7 +85,7 @@ impl PanelKind {
         PanelKind::CreateNullsFromPaths,
     ];
     pub fn retired(self) -> bool {
-        matches!(self, Self::MediaBrowser | Self::VrCompEditor | Self::Tracker | Self::MaskInterpolation | Self::ContentAwareFill)
+        matches!(self, Self::Paint | Self::Brushes | Self::MediaBrowser | Self::VrCompEditor | Self::Tracker | Self::MaskInterpolation | Self::ContentAwareFill)
     }
     pub fn title(self) -> &'static str {
         match self {
@@ -145,8 +143,6 @@ impl PanelKind {
             PanelKind::EffectsPresets => Some("Cmd+5"),
             PanelKind::Character => Some("Cmd+6"),
             PanelKind::Paragraph => Some("Cmd+7"),
-            PanelKind::Paint => Some("Cmd+8"),
-            PanelKind::Brushes => Some("Cmd+9"),
             PanelKind::RenderQueue => Some("Cmd+Alt+0"),
             PanelKind::EffectControls => Some("F3"),
             _ => None,
@@ -280,7 +276,6 @@ pub const WORKSPACES: &[&str] = &[
     "Small Screen",
     "Animation",
     "Effects",
-    "Paint",
     "Text",
     "Minimal",
     "All Panels",
@@ -329,15 +324,6 @@ pub fn workspace(name: &str) -> DockNode {
                 hsplit(FixedB(300.0), tabs(&[Composition, Layer], 0), right(&[Info, Preview], &[EffectsPresets])),
             ),
             tabs(&[Timeline, RenderQueue], 0),
-        ),
-        "Paint" => vsplit(
-            Ratio(0.6),
-            hsplit(
-                FixedA(300.0),
-                tabs(&[Project, EffectControls], 0),
-                hsplit(FixedB(300.0), tabs(&[Layer, Composition], 0), right(&[Paint, Info], &[Brushes, Preview])),
-            ),
-            tabs(&[Timeline], 0),
         ),
         "Text" => vsplit(
             Ratio(0.58),
@@ -402,7 +388,7 @@ pub fn workspace(name: &str) -> DockNode {
                     tabs(&[Composition, Layer, Footage], 0),
                     right(
                         &[Info, Preview, Audio, Align, Character, Paragraph, LumetriScopes],
-                        &[EffectsPresets, Properties, Wiggler, Smoother, MotionSketch, Paint, Brushes, Markers, CreateNullsFromPaths],
+                        &[EffectsPresets, Properties, Wiggler, Smoother, MotionSketch, Markers, CreateNullsFromPaths],
                     ),
                 ),
             ),
@@ -1459,7 +1445,6 @@ mod tests {
             "Color",
             "Effects",
             "Minimal",
-            "Paint",
             "Text",
             "Undocked Panels",
         ] {

@@ -345,6 +345,8 @@ pub enum Event {
         error: bool,
     },
     OpenComp(ItemId),
+    ProjectOpened,
+    CompRangeChanged(ItemId),
     OpenUrl(String),
     /// A frontend-only command (viewer zoom, panels, dialogs…) ran: the UI performs it. Headless
     /// sessions ignore these.
@@ -357,6 +359,8 @@ pub enum Event {
 }
 
 pub struct Session {
+    /// Frontend snapshot used by Save, Save As and auto-save. Never part of undo.
+    pub frontend_state: Value,
     pub project: Arc<Project>,
     pub history: History,
     pub revision: u64,
@@ -516,6 +520,7 @@ impl Default for Session {
     fn default() -> Self {
         let project = Arc::new(Project::default());
         Session {
+            frontend_state: Value::Null,
             saved_project: project.clone(),
             project,
             history: History::default(),
@@ -972,6 +977,22 @@ impl Session {
     }
 
     /// Replace the whole project (open/new), resetting history and state.
+    /// Snapshot live editing context without changing the artwork or dirty/undo state.
+    pub fn editing_session_for_save(&self) -> effectcraft_project::EditingSession {
+        effectcraft_project::EditingSession {
+            open_comps: self.state.open_comps.clone(),
+            active_comp: self.state.active_comp,
+            times: self.state.times.clone(),
+            frontend: self.frontend_state.clone(),
+        }
+    }
+
+    pub fn project_for_save(&self) -> Project {
+        let mut project = (*self.project).clone();
+        project.editing_session = Some(self.editing_session_for_save());
+        project
+    }
+
     pub fn replace_project(&mut self, mut p: Project, path: Option<String>) {
         if self.stop_render()
             && let Some(mut job) = self.render_job.take()
@@ -997,6 +1018,7 @@ impl Session {
         p.fix_next_id();
         upgrade_effects(&mut p);
         let legacy_features = feature_policy::project_uses_legacy_features(&p);
+        let saved_editing = p.editing_session.take();
         self.project = Arc::new(p);
         self.history = History::default();
         self.state = EditorState { snapping: false, view_layout: 1, ..Default::default() };
@@ -1006,10 +1028,24 @@ impl Session {
         if legacy_features {
             self.toast("This project contains retired tracking, Roto Brush or VR effects. Existing data is preserved for compatibility; these tools cannot be created or re-analyzed in this fork.");
         }
-        let first = self.project.comps().next().map(|(id, _)| *id);
-        if let Some(c) = first {
-            self.open_comp(c);
+        self.frontend_state = Value::Null;
+        if let Some(saved) = saved_editing {
+            let mut seen = std::collections::BTreeSet::new();
+            self.state.open_comps = saved.open_comps.into_iter()
+                .filter(|id| self.project.comp(*id).is_some() && seen.insert(*id)).collect();
+            self.state.active_comp = saved.active_comp.filter(|id| self.state.open_comps.contains(id))
+                .or_else(|| self.state.open_comps.first().copied());
+            self.state.times = saved.times.into_iter().filter_map(|(id, time)| {
+                let c = self.project.comp(id)?;
+                let last = (c.duration - c.frame_duration()).max(Tick::ZERO);
+                Some((id, c.frame_rate.snap_nearest(time.clamp(Tick::ZERO, last)).clamp(Tick::ZERO, last)))
+            }).collect();
+            self.frontend_state = saved.frontend;
+        } else if let Some(c) = self.project.comps().next().map(|(id, _)| *id) {
+            self.state.active_comp = Some(c);
+            self.state.open_comps.push(c);
         }
+        self.events.push(Event::ProjectOpened);
     }
 }
 

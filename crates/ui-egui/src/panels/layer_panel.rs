@@ -1,30 +1,12 @@
-//! The Layer panel: one layer in its own (layer) space, where the Brush, Clone Stamp and Eraser
-//! tools paint. Double-clicking a footage or solid layer (or Layer ▸ Open Layer) opens it.
-//!
-//! The image is the layer's source and masks followed by its effects up to the View menu's
-//! choice (by default the last Paint effect, as After Effects shows "Paint"). Dragging with a
-//! paint tools records the stroke's points in layer space and, on release, runs `paint.stroke`
-//! at the current time (the drag's duration feeds Write On). Alt/Option-click with the Clone
-//! Stamp sets the clone source.
-//!
+//! Layer source inspection with masks and effects; artwork is authored externally.
+
 use crate::i18n::{tr, tr_args};
-use effectcraft_engine::effects::paint;
 use effectcraft_engine::project::{Layer, LayerId};
 use effectcraft_engine::render::{EvalCtx, RenderOpts, Renderer};
 use egui::{Align2, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
-use serde_json::json;
 
-use crate::state::Tool;
 use crate::theme::Tokens;
 use crate::{EffectcraftApp, widgets};
-
-/// A stroke being drawn.
-#[derive(Clone, Debug)]
-struct Drag {
-    layer: u64,
-    points: Vec<[f64; 2]>,
-    started: f64,
-}
 
 /// Cached texture of the rendered layer: (revision, layer, time, view, scale) → texture and the
 /// layer-space rectangle it covers.
@@ -47,11 +29,6 @@ pub fn current_layer(app: &EffectcraftApp) -> Option<Layer> {
     comp.layer(id).cloned()
 }
 
-/// Show through the last Paint effect, preserving ordinary paint tools.
-fn default_view(layer: &Layer, _tool: Tool) -> usize {
-    layer.effects().and_then(|fx| fx.groups().enumerate().filter(|(_, g)| paint::is_paint(g)).map(|(i, _)| i + 1).last()).unwrap_or(0)
-}
-
 pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let t = app.tokens;
     let ctx = ui.ctx().clone();
@@ -65,7 +42,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let comp = app.session.project.comp_arc(cid).unwrap_or_else(|| effectcraft_engine::project::Comp::new(1, 1, Default::default(), Default::default()).into());
     let time = app.session.time();
     let fx_count = layer.effects().map(|f| f.groups().count()).unwrap_or(0);
-    let view = app.ui.layer_view.map(|v| v.min(fx_count)).unwrap_or_else(|| default_view(&layer, app.ui.tool));
+    let view = app.ui.layer_view.map(|v| v.min(fx_count)).unwrap_or(fx_count);
 
     // Title strip.
     let top = Rect::from_min_size(rect.min, vec2(rect.width(), 24.0));
@@ -143,103 +120,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     app.auto.add("layerPanel.canvas", frame, &layer.name);
     app.auto.add("layerPanel.area", area, "Layer panel");
 
-    // Interaction: paint tools.
-    let resp = ui.interact(area, egui::Id::new("layer-panel-interact"), Sense::click_and_drag());
-    let kind = app.ui.tool.paint_kind();
-    let o = app.session.state.paint.clone();
-    let did = egui::Id::new("layer-panel-drag");
-    if let Some(hp) = resp.hover_pos() {
-        let lp = to_layer(hp);
-        app.pointer_comp = Some([lp[0] as f32, lp[1] as f32]);
-        if kind.is_some() {
-            ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
-            // Brush tip outline.
-            let rad = (o.diameter * 0.5 * zoom) as f32;
-            let ang = (o.angle as f32).to_radians();
-            let rnd = (o.roundness / 100.0).clamp(0.01, 1.0) as f32;
-            let pts: Vec<Pos2> = (0..48)
-                .map(|i| {
-                    let a = i as f32 / 48.0 * std::f32::consts::TAU;
-                    let (x, y) = (a.cos() * rad, a.sin() * rad * rnd);
-                    hp + vec2(x * ang.cos() - y * ang.sin(), x * ang.sin() + y * ang.cos())
-                })
-                .collect();
-            painter.add(egui::Shape::closed_line(pts, Stroke::new(1.0, Color32::from_white_alpha(200))));
-            // Clone source overlay.
-            if app.ui.tool == Tool::Clone
-                && o.show_overlay
-                && let (Some(tx), Some(src)) = (&tex, o.clone_point)
-            {
-                let off = o.clone_offset.unwrap_or([src[0] - lp[0], src[1] - lp[1]]);
-                let r = Rect::from_min_max(to_screen([tx.rect[0] - off[0], tx.rect[1] - off[1]]), to_screen([tx.rect[2] - off[0], tx.rect[3] - off[1]]));
-                let a = (o.overlay_opacity / 100.0 * 255.0).clamp(0.0, 255.0) as u8;
-                painter.with_clip_rect(frame).image(tx.tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::from_white_alpha(a));
-            }
-        }
-    }
-    if let Some(src) = o.clone_point.filter(|_| app.ui.tool == Tool::Clone && o.clone_source.is_none_or(|l| l == layer.id.0)) {
-        let s = to_screen(src);
-        painter.line_segment([s - vec2(6.0, 0.0), s + vec2(6.0, 0.0)], Stroke::new(1.0, Color32::WHITE));
-        painter.line_segment([s - vec2(0.0, 6.0), s + vec2(0.0, 6.0)], Stroke::new(1.0, Color32::WHITE));
-    }
-    let mods = ui.input(|i| i.modifiers);
-    let now = ui.input(|i| i.time);
-    // Alt/Option-click with the Clone Stamp sets the source.
-    if app.ui.tool == Tool::Clone
-        && mods.alt
-        && resp.clicked()
-        && let Some(pos) = resp.interact_pointer_pos()
-    {
-        let lp = to_layer(pos);
-        let _ = app.session.execute("paint.setCloneSource", json!({"layer": layer.id.0, "point": lp}));
-        return;
-    }
-    if let Some(kind) = kind
-        && !mods.alt
-    {
-        if resp.drag_started()
-            && let Some(pos) = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos())
-        {
-            ctx.data_mut(|d| d.insert_temp(did, Drag { layer: layer.id.0, points: vec![to_layer(pos)], started: now }));
-        }
-        if let Some(mut d) = ctx.data(|d| d.get_temp::<Drag>(did)) {
-            if let Some(pos) = resp.interact_pointer_pos() {
-                let lp = to_layer(pos);
-                let last = d.points.last().copied().unwrap_or(lp);
-                if (lp[0] - last[0]).hypot(lp[1] - last[1]) * zoom >= 1.0 {
-                    d.points.push(lp);
-                    ctx.data_mut(|dd| dd.insert_temp(did, d.clone()));
-                }
-            }
-            // Live preview of the stroke.
-            let col = if kind == "eraser" {
-                Color32::from_white_alpha(140)
-            } else {
-                Color32::from_rgba_unmultiplied((o.color[0] * 255.0) as u8, (o.color[1] * 255.0) as u8, (o.color[2] * 255.0) as u8, 200)
-            };
-            let width = ((o.diameter * zoom) as f32).max(1.0);
-            let pts: Vec<Pos2> = d.points.iter().map(|q| to_screen(*q)).collect();
-            if pts.len() == 1 {
-                painter.circle_filled(pts[0], width / 2.0, col);
-            } else {
-                painter.add(egui::Shape::line(pts, Stroke::new(width, col)));
-            }
-            if resp.drag_stopped() {
-                ctx.data_mut(|dd| dd.remove::<Drag>(did));
-                let pts: Vec<[f64; 2]> = d.points.clone();
-                let r = app.session.execute("paint.stroke", json!({"layer": d.layer, "kind": kind, "points": pts, "duration": (now - d.started).max(0.0)}));
-                if let Err(e) = r {
-                    app.ui.status = e.to_string();
-                }
-            }
-        }
-        if resp.clicked()
-            && let Some(pos) = resp.interact_pointer_pos()
-        {
-            let r = app.session.execute("paint.stroke", json!({"layer": layer.id.0, "kind": kind, "points": [to_layer(pos)], "duration": 0.0}));
-            if let Err(e) = r {
-                app.ui.status = e.to_string();
-            }
-        }
+    let resp = ui.interact(area, egui::Id::new("layer-panel-interact"), Sense::hover());
+    if let Some(pos) = resp.hover_pos() {
+        let point = to_layer(pos);
+        app.pointer_comp = Some([point[0] as f32, point[1] as f32]);
     }
 }

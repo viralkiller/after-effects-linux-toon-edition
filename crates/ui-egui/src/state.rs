@@ -56,12 +56,9 @@ impl Tool {
         &[Tool::Rectangle, Tool::RoundedRect, Tool::Ellipse, Tool::Polygon, Tool::Star],
         &[Tool::Pen, Tool::PenAdd, Tool::PenDelete, Tool::PenConvert, Tool::MaskFeather],
         &[Tool::Type, Tool::TypeVertical],
-        &[Tool::Brush],
-        &[Tool::Clone],
-        &[Tool::Eraser],
         &[Tool::Puppet, Tool::PuppetStarch, Tool::PuppetBend, Tool::PuppetAdvanced, Tool::PuppetOverlap],
     ];
-    pub const ALL: [Tool; 28] = [
+    pub const ALL: [Tool; 25] = [
         Tool::Selection,
         Tool::Hand,
         Tool::Zoom,
@@ -82,9 +79,6 @@ impl Tool {
         Tool::MaskFeather,
         Tool::Type,
         Tool::TypeVertical,
-        Tool::Brush,
-        Tool::Clone,
-        Tool::Eraser,
         Tool::Puppet,
         Tool::PuppetStarch,
         Tool::PuppetBend,
@@ -138,7 +132,7 @@ impl Tool {
             Tool::Rectangle | Tool::RoundedRect | Tool::Ellipse | Tool::Polygon | Tool::Star => Some("Q"),
             Tool::Pen | Tool::PenAdd | Tool::PenDelete | Tool::PenConvert | Tool::MaskFeather => Some("G"),
             Tool::Type | Tool::TypeVertical => Some("Cmd+T"),
-            Tool::Brush | Tool::Clone | Tool::Eraser => Some("Cmd+B"),
+            Tool::Brush | Tool::Clone | Tool::Eraser => None,
             Tool::RotoBrush | Tool::RefineEdge => Some("Alt+W"),
             Tool::Puppet | Tool::PuppetStarch | Tool::PuppetBend | Tool::PuppetAdvanced | Tool::PuppetOverlap => Some("Cmd+P"),
         }

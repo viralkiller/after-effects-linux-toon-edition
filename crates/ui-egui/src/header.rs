@@ -115,7 +115,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             });
         }
         x += 28.0;
-        if matches!(si, 2 | 5 | 7 | 10 | 13) {
+        if matches!(si, 2 | 5 | 7 | 10) {
             x += 4.0;
             p.line_segment([pos2(x, cy - 10.0), pos2(x, cy + 10.0)], Stroke::new(1.0, t.separator));
             x += 6.0;

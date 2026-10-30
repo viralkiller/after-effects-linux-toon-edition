@@ -219,8 +219,7 @@ fn duplicate(s: &mut Session, p: &Value) -> Result<Value> {
             if it.is_folder() {
                 return Err(bad(c, "folders can't be duplicated"));
             }
-            let base = it.name.trim_end_matches(|ch: char| ch.is_ascii_digit()).trim_end().to_string();
-            let name = (2..).map(|i| format!("{base} {i}")).find(|n| proj.find_by_name(n).is_none()).unwrap_or_default();
+            let name = effectcraft_project::unique_name(&it.name, proj.items.values().map(|i| i.name.as_str()));
             let mut kind = it.kind.clone();
             if let effectcraft_project::ItemKind::Comp(comp) = &mut kind {
                 let comp = std::sync::Arc::make_mut(comp);

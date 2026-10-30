@@ -223,9 +223,12 @@ impl Session {
         let plan = autosave::plan_in(self.file_ops(), &prefs, self.path.as_deref(), root.as_deref(), self.autosave.last_slot).map_err(fail)?;
         if self.autosave.background && !cfg!(target_arch = "wasm32") {
             let project = self.project.clone();
+            let editing = self.editing_session_for_save();
             let config = self.config.clone();
             let job = plan.clone();
             let pending = autosave::PendingWrite::spawn(plan.path.clone(), move || {
+                let mut project = (*project).clone();
+                project.editing_session = Some(editing);
                 let json = project.to_json_compact();
                 match &config {
                     Some(c) => job.write(c.files(), json.as_bytes()),
@@ -235,7 +238,7 @@ impl Session {
             .map_err(fail)?;
             self.autosave.pending = Some(pending);
         } else {
-            let json = self.project.to_json_compact();
+            let json = self.project_for_save().to_json_compact();
             plan.write(self.file_ops(), json.as_bytes()).map_err(fail)?;
         }
         let (path, slot) = (plan.path, plan.slot);

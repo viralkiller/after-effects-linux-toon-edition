@@ -95,3 +95,125 @@ fn xcf_auto_blend_creates_project_items() {
     assert_eq!(footage_count, 2);
     std::fs::remove_file(path).unwrap();
 }
+
+fn updated_xcf() -> Vec<u8> {
+    fixture::fixture(4, 3, 12, 150, 0, &[
+        fixture::Layer::solid("layer4", 1, 1, [255; 4], 14),
+        fixture::Layer::solid("Renamed Ink", 2, 2, [0, 255, 0, 255], 11),
+        fixture::Layer::solid("Paper", 4, 3, [0, 0, 255, 255], 13),
+        fixture::Layer::solid("Hidden", 4, 3, [0, 255, 0, 255], 12),
+        fixture::Layer::solid("layer5", 1, 1, [255; 4], 15),
+    ], None)
+}
+
+fn xcf_items(s: &Session, path: &std::path::Path) -> Vec<(ItemId, effectcraft_project::Footage)> {
+    s.project.items.values().filter_map(|i| match &i.kind {
+        ItemKind::Footage(f) if f.path == path.to_string_lossy() => Some((i.id, f.clone())),
+        _ => None,
+    }).collect()
+}
+
+#[test]
+fn xcf_reload_reopen_discovers_layers_and_preserves_all_timeline_edits() {
+    let (mut s, cid, path) = import(true, "reopen-sync");
+    s.open_comp(cid);
+    let layer = s.project.comp(cid).unwrap().layers[0].id;
+    s.execute("prop.toggleAnimation", json!({"layer": layer.0, "path": "transform/position"})).unwrap();
+    s.execute("time.set", json!({"time": 1})).unwrap();
+    s.execute("prop.set", json!({"layer": layer.0, "path": "transform/position", "value": [100, 200]})).unwrap();
+    s.execute("layer.timing", json!({"layers": [layer.0], "in": 0.5, "out": 2})).unwrap();
+    let timeline = serde_json::to_value(s.project.comp(cid).unwrap()).unwrap();
+    let originals = xcf_items(&s, &path);
+    let project_path = path.with_extension("ecproj");
+    std::fs::write(&project_path, s.project.to_json()).unwrap();
+    std::fs::write(&path, updated_xcf()).unwrap();
+    // Reopen an older project with no watcher history, as after quitting the app.
+    let mut reopened = Session::default();
+    reopened.execute("file.open", json!({"path": project_path})).unwrap();
+    let result = reopened.execute("footage.reloadChanged", json!({})).unwrap();
+    assert_eq!(result["reloaded"], 3);
+    assert_eq!(serde_json::to_value(reopened.project.comp(cid).unwrap()).unwrap(), timeline);
+    let fresh = xcf_items(&reopened, &path);
+    assert_eq!(fresh.len(), 5);
+    for (id, old) in originals {
+        let f = &fresh.iter().find(|(i, _)| *i == id).unwrap().1;
+        assert_eq!(f.layer.as_ref().unwrap().xcf_tattoo, old.layer.as_ref().unwrap().xcf_tattoo);
+        assert!(!f.missing);
+    }
+    assert!(reopened.is_dirty(), "new project items must be saved");
+    let before = reopened.project.to_json();
+    reopened.execute("footage.reloadChanged", json!({})).unwrap();
+    assert_eq!(reopened.project.to_json(), before, "no duplicate discovery");
+    // Explicit reload is equally idempotent and refreshes the whole document.
+    crate::footage_reload::reload_items(&mut reopened, &[fresh[0].0]).unwrap();
+    assert_eq!(xcf_items(&reopened, &path).len(), 5);
+    std::fs::remove_file(project_path).unwrap();
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn xcf_reload_deleted_identity_is_not_replaced_by_same_name() {
+    let (mut s, cid, path) = import(true, "identity-sync");
+    let originals = xcf_items(&s, &path);
+    let ink = originals.iter().find(|(_, f)| f.layer.as_ref().unwrap().xcf_tattoo == Some(11)).unwrap().0;
+    let timeline = serde_json::to_value(s.project.comp(cid).unwrap()).unwrap();
+    let bytes = fixture::fixture(4, 3, 12, 150, 0, &[fixture::Layer::solid("Ink", 2, 2, [255; 4], 99)], None);
+    std::fs::write(&path, bytes).unwrap();
+    crate::footage_reload::reload_items(&mut s, &[ink]).unwrap();
+    let items = xcf_items(&s, &path);
+    assert!(items.iter().find(|(i, _)| *i == ink).unwrap().1.missing);
+    assert!(items.iter().any(|(id, f)| *id != ink && f.layer.as_ref().unwrap().xcf_tattoo == Some(99)));
+    s.execute("footage.check", json!({"wait": true})).unwrap();
+    assert!(xcf_items(&s, &path).iter().find(|(i, _)| *i == ink).unwrap().1.missing);
+    assert_eq!(serde_json::to_value(s.project.comp(cid).unwrap()).unwrap(), timeline);
+    // Restore the original source: its existing item is reconnected, never recreated.
+    std::fs::write(&path, fixture::sample()).unwrap();
+    crate::footage_reload::reload_items(&mut s, &[ink]).unwrap();
+    assert!(!xcf_items(&s, &path).iter().find(|(i, _)| *i == ink).unwrap().1.missing);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn xcf_reload_retries_incomplete_save_without_acknowledging_bad_stamp() {
+    let (mut s, _, path) = import(false, "retry-sync");
+    let key = path.to_string_lossy().into_owned();
+    s.mark_saved();
+    let before = s.project.to_json();
+    std::fs::write(&path, b"gimp xcf v012\0").unwrap();
+    let stamp = Some((123, 456));
+    crate::footage_reload::apply_stamps(&mut s, vec![(key.clone(), stamp)]).unwrap();
+    assert_eq!(s.project.to_json(), before);
+    assert!(!s.is_dirty());
+    assert!(!s.footage_stamps.contains_key(&key));
+    let ids = xcf_items(&s, &path);
+    assert!(crate::footage_reload::reload_items(&mut s, &[ids[0].0]).is_err());
+    assert_eq!(s.project.to_json(), before);
+    std::fs::write(&path, updated_xcf()).unwrap();
+    crate::footage_reload::apply_stamps(&mut s, vec![(key, stamp)]).unwrap();
+    assert_eq!(xcf_items(&s, &path).len(), 5, "retry even with the same observed stamp");
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn xcf_reload_pixel_only_refresh_does_not_dirty_saved_project() {
+    let (mut s, _, path) = import(false, "pixel-sync");
+    s.mark_saved();
+    let revision = s.revision;
+    s.execute("footage.reloadChanged", json!({})).unwrap();
+    assert!(!s.is_dirty());
+    assert!(s.revision > revision);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn xcf_reload_rejects_unsupported_save_atomically() {
+    let (mut s, _, path) = import(true, "unsupported-sync");
+    let before = s.project.to_json();
+    let ids = xcf_items(&s, &path);
+    let mut unsupported = fixture::Layer::solid("Ink", 2, 2, [255; 4], 11);
+    unsupported.mask = true;
+    std::fs::write(&path, fixture::fixture(4, 3, 12, 150, 0, &[unsupported], None)).unwrap();
+    assert!(crate::footage_reload::reload_items(&mut s, &[ids[0].0]).is_err());
+    assert_eq!(s.project.to_json(), before);
+    std::fs::remove_file(path).unwrap();
+}

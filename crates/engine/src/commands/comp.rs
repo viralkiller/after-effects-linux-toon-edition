@@ -214,7 +214,7 @@ fn keep_work_area_ordered(c: &mut Comp) {
 
 fn trim_to_wa(s: &mut Session, p: &Value) -> Result<Value> {
     let cid = comp_id(s, p)?;
-    s.edit("Trim Comp to Work Area", None, |proj, _| {
+    s.edit("Trim Comp to Work Area", None, |proj, st| {
         let c = proj.comp_mut(cid).ok_or(EngineError::NoComp)?;
         let (a, b) = c.work_area;
         let fd = c.frame_duration();
@@ -229,8 +229,11 @@ fn trim_to_wa(s: &mut Session, p: &Value) -> Result<Value> {
         }
         c.duration = b - a;
         c.work_area = (Tick::ZERO, b - a);
+        let time = st.times.get(&cid).copied().unwrap_or(Tick::ZERO);
+        st.times.insert(cid, (time - a).clamp(Tick::ZERO, (c.duration - fd).max(Tick::ZERO)));
         Ok(())
     })?;
+    s.events.push(crate::Event::CompRangeChanged(cid));
     Ok(Value::Null)
 }
 

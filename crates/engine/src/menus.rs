@@ -1140,7 +1140,6 @@ Window
     Effects | window.workspace {"name":"Effects"}
     Essential Graphics | window.workspace {"name":"Essential Graphics"}
     Minimal | window.workspace {"name":"Minimal"}
-    Paint | window.workspace {"name":"Paint"}
     Text | window.workspace {"name":"Text"}
     Undocked Panels | window.workspace {"name":"Undocked Panels"}
     @dynamic:savedWorkspaces
@@ -1154,14 +1153,12 @@ Window
   ---
   Align | window.panel {"panel":"align"}
   Audio | window.panel {"panel":"audio"} | Cmd+4
-  Brushes | window.panel {"panel":"brushes"} | Cmd+9
   Character | window.panel {"panel":"character"} | Cmd+6
   Effects & Presets | window.panel {"panel":"effectsPresets"} | Cmd+5
   Essential Graphics | window.panel {"panel":"essentialGraphics"}
   Info | window.panel {"panel":"info"} | Cmd+2
   Lumetri Scopes | window.panel {"panel":"lumetriScopes"}
   Motion Sketch | window.panel {"panel":"motionSketch"}
-  Paint | window.panel {"panel":"paint"} | Cmd+8
   Paragraph | window.panel {"panel":"paragraph"} | Cmd+7
   Preview | window.panel {"panel":"preview"} | Cmd+3
   Progress | window.panel {"panel":"progress"}

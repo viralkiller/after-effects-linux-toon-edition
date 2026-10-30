@@ -19,7 +19,7 @@ const MAX_VIEWER_ID: u32 = 65_535;
 const MAX_COORD: f32 = 1_000_000.0;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-struct Snapshot {
+pub(crate) struct Snapshot {
     version: u32,
     workspace: String,
     dock: DockNode,
@@ -31,7 +31,7 @@ struct Snapshot {
 }
 
 impl Snapshot {
-    fn capture(ui: &UiState) -> Self {
+    pub(crate) fn capture(ui: &UiState) -> Self {
         Self {
             version: 1,
             workspace: ui.workspace.clone(),
@@ -44,7 +44,7 @@ impl Snapshot {
         }
     }
 
-    fn apply(self, ui: &mut UiState) {
+    pub(crate) fn apply(self, ui: &mut UiState) {
         ui.workspace = self.workspace;
         ui.dock = self.dock;
         ui.floating = self.floating;
@@ -70,7 +70,7 @@ impl Snapshot {
         }
     }
 
-    fn validate(&self) -> Result<(), String> {
+    pub(crate) fn validate(&self) -> Result<(), String> {
         if self.version != 1 {
             return Err(format!("unsupported workspace version {}", self.version));
         }
@@ -414,10 +414,12 @@ mod tests {
 
 /// Remove retired panels from current and saved layouts without resetting other panels.
 pub(crate) fn remove_retired_panels(ui: &mut UiState) {
-    if ui.workspace == "Motion Tracking" {
+    if ui.workspace == "Motion Tracking" || ui.workspace == "Paint" {
         ui.workspace = "Default".into();
     }
     for root in std::iter::once(&mut ui.dock).chain(ui.saved_workspaces.values_mut()) {
+        root.close(PanelKind::Paint);
+        root.close(PanelKind::Brushes);
         root.close(PanelKind::MaskInterpolation);
         root.close(PanelKind::ContentAwareFill);
         root.close(PanelKind::Tracker);
@@ -461,12 +463,12 @@ mod fork_reduction_tests {
     #[test]
     fn retired_panels_are_removed_without_losing_other_tabs() {
         let mut ui = UiState {
-            dock: DockNode::Tabs { panels: vec![PanelKind::Project, PanelKind::MediaBrowser, PanelKind::Tracker, PanelKind::MaskInterpolation], active: 1 },
+            dock: DockNode::Tabs { panels: vec![PanelKind::Project, PanelKind::MediaBrowser, PanelKind::Tracker, PanelKind::MaskInterpolation, PanelKind::Paint, PanelKind::Brushes], active: 1 },
             ..Default::default()
         };
         ui.saved_workspaces.insert("Custom".into(), ui.dock.clone());
         ui.floating = vec![Floating {
-            panels: vec![PanelKind::VrCompEditor, PanelKind::Preview, PanelKind::ContentAwareFill],
+            panels: vec![PanelKind::VrCompEditor, PanelKind::Preview, PanelKind::ContentAwareFill, PanelKind::Paint, PanelKind::Brushes],
             active: 1,
             rect: [0.0, 0.0, 300.0, 200.0],
         }];
@@ -485,7 +487,7 @@ mod fork_reduction_tests {
         }
         assert_eq!(ui.focused, PanelKind::Composition);
         assert_eq!(ui.maximized, None);
-        for name in ["tracker", "mediaBrowser", "vrCompEditor", "maskInterpolation", "contentAwareFill"] {
+        for name in ["tracker", "mediaBrowser", "vrCompEditor", "maskInterpolation", "contentAwareFill", "paint", "brushes"] {
             assert!(PanelKind::from_name(name).is_none());
         }
     }

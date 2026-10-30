@@ -25,7 +25,6 @@ pub mod layer_styles_dialog;
 pub mod markers_ui;
 pub mod media_panels;
 pub mod misc;
-pub mod paint_panels;
 pub mod panel_kit;
 pub mod path_vr_panels;
 pub mod precomp;
@@ -149,8 +148,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: PanelKind, rect: Rec
         PanelKind::RenderQueue => render_queue::show(app, ui, rect),
         PanelKind::Tracker => {}
         PanelKind::Layer => layer_panel::show(app, ui, rect),
-        PanelKind::Paint => paint_panels::paint(app, ui, rect),
-        PanelKind::Brushes => paint_panels::brushes(app, ui, rect),
+        PanelKind::Paint | PanelKind::Brushes => {}
         PanelKind::EssentialGraphics => essential::show(app, ui, rect),
         PanelKind::ScriptPanel(id) => scriptui_view::panel(app, ui, rect, id),
         PanelKind::Flowchart => flowchart::show(app, ui, rect),

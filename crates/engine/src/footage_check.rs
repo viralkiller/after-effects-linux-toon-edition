@@ -111,6 +111,11 @@ fn apply(s: &mut Session, found: Vec<(ItemId, Found)>) -> Value {
         let Some(ItemKind::Footage(cur)) = p.item_mut(id).map(|i| &mut i.kind) else { continue };
         match f {
             Found::Missing(m) => {
+                // Existence alone cannot restore a deleted XCF source layer. The document
+                // reload resolves its tattoo and clears missing only when that layer returns.
+                if !m && cur.layer.is_some() && (cur.codec.eq_ignore_ascii_case("XCF") || cur.path.to_ascii_lowercase().ends_with(".xcf")) {
+                    continue;
+                }
                 missing += usize::from(m);
                 if cur.missing != m {
                     cur.missing = m;

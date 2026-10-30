@@ -1909,7 +1909,6 @@ mod tests {
         ("panels/media_panels.rs", include_str!("../panels/media_panels.rs")),
         ("panels/misc.rs", include_str!("../panels/misc.rs")),
         ("panels/mod.rs", include_str!("../panels/mod.rs")),
-        ("panels/paint_panels.rs", include_str!("../panels/paint_panels.rs")),
         ("panels/path_vr_panels.rs", include_str!("../panels/path_vr_panels.rs")),
         ("panels/precomp.rs", include_str!("../panels/precomp.rs")),
         ("panels/project.rs", include_str!("../panels/project.rs")),

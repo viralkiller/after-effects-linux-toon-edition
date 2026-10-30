@@ -31,6 +31,7 @@ pub mod state;
 pub mod theme;
 pub mod widgets;
 mod workspace_state;
+mod document_view;
 
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender};
@@ -256,6 +257,7 @@ pub struct EffectcraftApp {
     pub session: Session,
     pub ui: UiState,
     workspace_store: workspace_state::WorkspaceStore,
+    document_views: document_view::DocumentViews,
     pub tokens: Tokens,
     pub auto: automation::Registry,
     pub frames: Frames,
@@ -368,14 +370,15 @@ impl EffectcraftApp {
             ui.dock = dock::workspace("Default");
             ui.start_screen = false;
         }
-        if ui.tool.roto_kind(false).is_some() {
+        if ui.tool.roto_kind(false).is_some() || ui.tool.paint_kind().is_some() {
             ui.tool = state::Tool::Selection;
         }
         ui.slot_tools = state::Tool::SLOTS.iter().map(|slot| ui.slot_tools.iter().copied().find(|tool| slot.contains(tool)).unwrap_or(slot[0])).collect();
-        EffectcraftApp {
+        let mut app = EffectcraftApp {
             session,
             ui,
             workspace_store,
+            document_views: Default::default(),
             tokens: Tokens::for_kind(Default::default()),
             auto: Default::default(),
             frames: Frames::default(),
@@ -430,7 +433,13 @@ impl EffectcraftApp {
             template_thumbs: Default::default(),
             template_list: None,
         }
-        .with_ui_commands()
+        .with_ui_commands();
+        if !app.session.frontend_state.is_null() {
+            app.restore_document_view();
+        } else {
+            app.document_views_initial_comp();
+        }
+        app
     }
 
     /// Keep the saved workspaces for the next session (see [`EffectcraftApp::new`]): After
@@ -1565,7 +1574,12 @@ impl EffectcraftApp {
             match ev {
                 effectcraft_engine::Event::OpenComp(c) => {
                     panels::viewers::on_open_comp(self, c);
-                    self.ui.timeline.pps = None;
+                    self.switch_document_view(c);
+                }
+                effectcraft_engine::Event::ProjectOpened => self.restore_document_view(),
+                effectcraft_engine::Event::CompRangeChanged(c) => {
+                    self.refresh_trimmed_comp(c);
+                    ctx.request_repaint();
                 }
                 effectcraft_engine::Event::Toast { message, .. } => self.toast = Some((message, ctx.input(|i| i.time))),
                 effectcraft_engine::Event::OpenUrl(url) => ctx.open_url(egui::OpenUrl::new_tab(url)),
@@ -1632,6 +1646,7 @@ impl EffectcraftApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.window_title = title;
         }
+        if let Err(e) = self.capture_document_view() { self.ui.status = e; }
         self.tick_autosave(&ctx);
         prefs_live::frame(self, &ctx);
         if let Some(rx) = self.command_inbox.take() {
