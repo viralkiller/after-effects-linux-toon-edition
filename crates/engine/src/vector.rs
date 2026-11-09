@@ -316,7 +316,8 @@ pub fn import_vector_comp(
         l.name = comp.unique_layer_name(lname);
         comp.layers.insert(0, l);
     }
-    let cid = proj.add_item(name, Label::Sandstone, None, ItemKind::Comp(std::sync::Arc::new(comp)));
+    let comp_name = effectcraft_project::unique_name(name, proj.items.values().map(|item| item.name.as_str()));
+    let cid = proj.add_item(&comp_name, Label::Sandstone, None, ItemKind::Comp(std::sync::Arc::new(comp)));
     Ok((cid, folder, items))
 }
 

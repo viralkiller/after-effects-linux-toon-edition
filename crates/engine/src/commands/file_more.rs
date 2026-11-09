@@ -204,9 +204,17 @@ fn new_comp_from_selection(s: &mut Session, p: &Value) -> Result<Value> {
                 _ => g.iter().map(|i| duration(*i)).max().unwrap_or(Tick::from_seconds_f64(still)),
             }
             .max(rate.frame_duration());
-            let name = lead.name.rsplit_once('.').map(|(a, _)| a.to_string()).unwrap_or(lead.name.clone());
+            let name = if matches!(&lead.kind, ItemKind::Footage(_)) {
+                lead.name.rsplit_once('.').map(|(a, _)| a.to_string()).unwrap_or(lead.name.clone())
+            } else {
+                lead.name.clone()
+            };
             let c = Comp { pixel_aspect, ..Comp::new(w.max(1), h.max(1), rate, dur) };
             let cid = s.edit("New Comp from Selection", None, |proj, st| {
+                let name = effectcraft_project::unique_name(
+                    &name,
+                    proj.items.values().map(|item| item.name.as_str()),
+                );
                 let cid = proj.add_item(&name, Label::Sandstone, None, ItemKind::Comp(c.into()));
                 st.project_selection = vec![cid];
                 Ok(cid)
