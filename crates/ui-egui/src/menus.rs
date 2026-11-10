@@ -363,9 +363,12 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
             let next = match tools.iter().position(|x| *x == app.ui.tool) {
                 Some(i) => tools.get((i + 1) % tools.len()).copied(),
                 None => app.ui.slot_tools.get(si).copied().filter(|x| tools.contains(x)).or_else(|| tools.first().copied()),
-            }.ok_or_else(|| "empty tool slot".to_string())?;
+            }
+            .ok_or_else(|| "empty tool slot".to_string())?;
             app.ui.tool = next;
-            if let Some(saved) = app.ui.slot_tools.get_mut(si) { *saved = next; }
+            if let Some(saved) = app.ui.slot_tools.get_mut(si) {
+                *saved = next;
+            }
             return Ok(json!({"tool": next}));
         }
         let tool = Tool::from_name(t).ok_or_else(|| format!("unknown tool `{t}`"))?;
@@ -500,7 +503,14 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
         app.set_theme(ctx, k);
         return Ok(Value::Null);
     }
-    let timing = |app: &mut EffectcraftApp, op: &str| app.session.execute("layer.timing", json!({"op": op})).map_err(|e| e.to_string());
+    let timing = |app: &mut EffectcraftApp, op: &str| {
+        log::debug!("timeline timing: op={op}, time={:?}, layers={:?}", app.session.time(), app.session.state.selected_layers);
+        let result = app.session.execute("layer.timing", json!({"op": op})).map_err(|e| e.to_string());
+        if let Err(error) = &result {
+            log::warn!("timeline timing failed: op={op}, error={error}");
+        }
+        result
+    };
     match id {
         "playback.ramPreview" => {
             app.toggle_play_with(now, effectcraft_engine::preview::PreviewShortcut::Numpad0);
@@ -1597,6 +1607,15 @@ pub fn handle_tab_shortcut(app: &mut EffectcraftApp, ctx: &egui::Context) {
 
 fn handle_shortcuts_impl(app: &mut EffectcraftApp, ctx: &egui::Context, tab_only: bool) {
     let start = modifiers_at_start(ctx);
+    if !tab_only && ctx.input(|i| i.key_pressed(egui::Key::OpenBracket) || i.key_pressed(egui::Key::CloseBracket)) {
+        log::debug!(
+            "timeline bracket input: focus={:?}, typing={}, modifiers={:?}, layers={:?}",
+            ctx.memory(|m| m.focused()),
+            ctx.text_edit_focused(),
+            ctx.input(|i| i.modifiers),
+            app.session.state.selected_layers
+        );
+    }
     // Dialog cancellation owns Escape even when a text field has keyboard focus.
     if !tab_only && app.dialog.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         if crate::panels::shortcut_editor::recording(app) || egui::Popup::is_any_open(ctx) {
@@ -1628,7 +1647,8 @@ fn handle_shortcuts_impl(app: &mut EffectcraftApp, ctx: &egui::Context, tab_only
     }
     // While a menu or popup list is open, keys go to it, not to the app (Space must not start a
     // preview behind the menu, #279).
-    if ctx.egui_wants_keyboard_input() || crate::widgets::any_menu_open(ctx) {
+    let widget_focused = ctx.egui_wants_keyboard_input();
+    if ctx.text_edit_focused() || crate::widgets::any_menu_open(ctx) {
         return;
     }
     // Text editing in the viewer takes the clipboard events itself.
@@ -1674,10 +1694,28 @@ fn handle_shortcuts_impl(app: &mut EffectcraftApp, ctx: &egui::Context, tab_only
         }
         out
     });
-    events.retain(|(key, _, _)| (*key == egui::Key::Tab) == tab_only);
+    let binds = bindings(&app.session);
+    events.retain(|(key, mods, _)| {
+        if (*key == egui::Key::Tab) != tab_only {
+            return false;
+        }
+        // Non-text focus must not swallow layer timing.
+        !widget_focused
+            || app.session.state.text_edit.is_none()
+                && binds.iter().any(|(m, k, id, ..)| {
+                    *k == *key
+                        && mods_match(*m, *mods)
+                        && matches!(id.as_str(), "timeline.moveInToTime" | "timeline.moveOutToTime" | "timeline.trimInToTime" | "timeline.trimOutToTime")
+                })
+    });
     // Numpad * (or `*` typed with Shift+8): Add Marker (#275). egui has no key for it, so it
     // comes as text.
-    if !tab_only && clipboard && app.dialog.is_none() && ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "*"))) {
+    if !widget_focused
+        && !tab_only
+        && clipboard
+        && app.dialog.is_none()
+        && ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "*")))
+    {
         let bound = app.session.shortcuts().bindings().into_iter().find(|(k, _)| *k == "Num*").map(|(_, b)| (b.command.clone(), b.params.clone()));
         if let Some((id, params)) = bound
             && let Err(e) = invoke(app, ctx, &id, if params.is_null() { json!({}) } else { params })
@@ -1688,7 +1726,6 @@ fn handle_shortcuts_impl(app: &mut EffectcraftApp, ctx: &egui::Context, tab_only
     if events.is_empty() {
         return;
     }
-    let binds = bindings(&app.session);
     for (key, mods, pressed) in events {
         // Plain Spacebar runs its shortcut (Play Current Preview) on the release: held, it is
         // the Hand tool (After Effects), and a drag with it must not start or stop playback.

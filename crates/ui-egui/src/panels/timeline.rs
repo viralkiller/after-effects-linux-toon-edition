@@ -1688,6 +1688,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let rh = t.row_h;
     let total_h: f32 = rows.iter().map(|r| row_height(r, rh)).sum();
     let max_scroll = (total_h - rows_rect.height() + rh).max(0.0);
+    app.auto.add("timeline.layerList", rows_rect, "Layer list");
     if ui.rect_contains_pointer(rows_rect) {
         let (dy, dx, zoom) = ui.input(|i| (i.smooth_scroll_delta.y, i.smooth_scroll_delta.x, i.modifiers.alt));
         // Ctrl/Cmd+wheel and a trackpad pinch reach egui as a zoom factor rather than a scroll
@@ -1715,7 +1716,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
     // A pick whip held near the top or bottom of the layers (or past it) scrolls them, as in
     // After Effects.
-    if ctx.data(|d| d.get_temp::<PickWhip>(pick_whip_id())).is_some()
+    if ctx.input(|i| i.pointer.primary_down())
+        && (ctx.data(|d| d.get_temp::<PickWhip>(pick_whip_id())).is_some() || ctx.data(|d| d.get_temp::<Vec<u64>>(layer_drag_id())).is_some())
         && let Some(ptr) = ctx.input(|i| i.pointer.latest_pos()).filter(|p| rect.x_range().contains(p.x))
     {
         let speed = edge_scroll_speed(rows_rect, ptr.y, rh);
@@ -1863,6 +1865,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     // The selected layers move together; an unselected row moves alone.
                     let moving: Vec<u64> =
                         if is_sel { comp.layers.iter().filter(|l| selected.contains(&l.id)).map(|l| l.id.0).collect() } else { vec![layer.id.0] };
+                    log::debug!("timeline reorder started: layers={moving:?}");
                     ctx.data_mut(|d| d.insert_temp(layer_drag_id(), moving));
                 }
                 if row_resp.drag_stopped() {
@@ -1871,6 +1874,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 app.auto.add(&format!("timeline.layer.{}.row", layer.id.0), left, &layer.name);
                 if row_resp.clicked() && !locked {
                     let m = ui.input(|i| i.modifiers);
+                    log::debug!("timeline row selected: layer={}, modifiers={m:?}", layer.id.0);
                     if let Some(layers) = m.shift.then(|| shift_range(&ctx, cid, &comp, &rows, &selected, layer.id)).flatten() {
                         actions.push(("layer.select".into(), json!({"layers": layers})));
                     } else {
@@ -2820,7 +2824,15 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
     // Layer reorder drag: a line where the layers will land; the release moves them there.
     if let Some(moving) = ctx.data(|d| d.get_temp::<Vec<u64>>(layer_drag_id())) {
-        let dropped = ctx.data_mut(|d| d.remove_temp::<bool>(layer_drop_id())).unwrap_or(false);
+        let row_dropped = ctx.data_mut(|d| d.remove_temp::<bool>(layer_drop_id())).unwrap_or(false);
+        // The origin row may no longer be drawn after scrolling: observe release globally.
+        let released = ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary));
+        let inside = ctx.input(|i| i.pointer.latest_pos()).is_some_and(|p| rect.contains(p));
+        let dropped = (row_dropped || released) && inside;
+        if !ctx.input(|i| i.pointer.primary_down()) && !dropped {
+            log::debug!("timeline reorder cancelled: layers={moving:?}");
+            ctx.data_mut(|d| d.remove::<Vec<u64>>(layer_drag_id()));
+        }
         let layer_rows: Vec<(Rect, LayerId)> = hit_rows.iter().filter(|(_, r)| matches!(r.kind, RowKind::Layer)).map(|(rr, r)| (*rr, r.layer)).collect();
         if let Some(py) = ui.input(|i| i.pointer.interact_pos().or(i.pointer.latest_pos())).map(|p| p.y)
             && !layer_rows.is_empty()
@@ -2838,6 +2850,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         Some(t) => json!({"layers": moving, "above": t.0}),
                         None => json!({"layers": moving, "to": "back"}),
                     };
+                    log::debug!("timeline reorder dropped: {params}");
                     actions.push(("layer.arrange".into(), params));
                 }
             } else {

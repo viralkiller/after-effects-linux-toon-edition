@@ -120,7 +120,8 @@ fn new_comp(cx: &Ctx) -> Comp {
 }
 
 fn build_comp(proj: &mut Project, cx: &mut Ctx, name: &str, nodes: &[Node], parent: Option<ItemId>) -> ItemId {
-    let cid = proj.add_item(name, Label::Sandstone, parent, ItemKind::Comp(Arc::new(new_comp(cx))));
+    let comp_name = effectcraft_project::unique_name(name, proj.items.values().map(|item| item.name.as_str()));
+    let cid = proj.add_item(&comp_name, Label::Sandstone, parent, ItemKind::Comp(Arc::new(new_comp(cx))));
     cx.items.push(cid);
     let mut comp = new_comp(cx);
     for n in nodes {

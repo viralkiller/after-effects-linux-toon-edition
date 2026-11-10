@@ -55,7 +55,8 @@ pub(crate) fn import(
         }
         comp.layers.push(l);
     }
-    let comp = proj.add_item(name, Label::Sandstone, None, ItemKind::Comp(Arc::new(comp)));
+    let comp_name = effectcraft_project::unique_name(name, proj.items.values().map(|item| item.name.as_str()));
+    let comp = proj.add_item(&comp_name, Label::Sandstone, None, ItemKind::Comp(Arc::new(comp)));
     items.push(comp);
     crate::psd_import::PsdImport { comp, folder, items, warnings }
 }
