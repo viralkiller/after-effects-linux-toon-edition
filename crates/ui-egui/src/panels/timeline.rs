@@ -19,6 +19,18 @@ use crate::icons::{self, Icon};
 use crate::theme::Tokens;
 use crate::{EffectcraftApp, widgets};
 
+fn parent_selection(comp: &Comp, selected: &[LayerId], source: LayerId, parent: Option<LayerId>) -> Option<serde_json::Value> {
+    let group = selected.contains(&source);
+    let layers: Vec<u64> = comp
+        .layers
+        .iter()
+        .filter(|l| (if group { selected.contains(&l.id) } else { l.id == source }) && !l.switches.locked && Some(l.id) != parent)
+        .map(|l| l.id.0)
+        .collect();
+    log::debug!("timeline parent requested: source={}, layers={layers:?}, parent={parent:?}", source.0);
+    (!layers.is_empty()).then(|| json!({"layers": layers, "parent": parent.map(|id| id.0)}))
+}
+
 #[derive(Clone, Debug)]
 enum RowKind {
     Layer,
@@ -2000,6 +2012,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     app.auto.add(&format!("timeline.layer.{}.parent", layer.id.0), pr_rect, "Parent");
                     let pop = egui::Id::new(("par-pop", layer.id.0));
                     if presp.clicked() {
+                        log::debug!("timeline parent menu opened: layer={}, selection={selected:?}", layer.id.0);
                         widgets::open_popup(ui, pop);
                     }
                     let mut cands: Vec<&Layer> = vec![];
@@ -2011,8 +2024,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         }
                     }
                     if let Some(i) = widgets::popup_menu(ui, pop, pr_rect.left_bottom(), &popts, None) {
-                        let par = if i == 0 { serde_json::Value::Null } else { json!(cands[i - 2].id.0) };
-                        actions.push(("layer.setParent".into(), json!({"layers": [layer.id.0], "parent": par})));
+                        let parent = if i == 0 { Some(None) } else { i.checked_sub(2).and_then(|index| cands.get(index)).map(|l| Some(l.id)) };
+                        if let Some(params) = parent.and_then(|parent| parent_selection(&comp, &selected, layer.id, parent)) {
+                            actions.push(("layer.setParent".into(), params));
+                        }
                     }
                 }
                 // Layer bar.
@@ -2775,7 +2790,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             };
             match (kind, target, prop_target) {
                 (WHIP_PARENT, Some((_, row)), _) if row.layer.0 != src_layer => {
-                    actions.push(("layer.setParent".into(), json!({"layers": [src_layer], "parent": row.layer.0})));
+                    if let Some(params) = parent_selection(&comp, &selected, LayerId(src_layer), Some(row.layer)) {
+                        actions.push(("layer.setParent".into(), params));
+                    }
                 }
                 // The property pick whip replaces the expression with the reference (or adds one),
                 // as the expression pick whip does when its expression isn't being edited.
